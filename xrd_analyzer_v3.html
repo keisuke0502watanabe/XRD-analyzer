@@ -1,0 +1,370 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+#app{padding:1rem 0}
+h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.tabs{display:flex;gap:4px;margin-bottom:1.25rem;border-bottom:0.5px solid var(--color-border-tertiary);padding-bottom:0}
+.tab{font-size:13px;padding:7px 16px;border:none;background:none;color:var(--color-text-secondary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-0.5px}
+.tab.active{color:var(--color-text-primary);border-bottom:2px solid var(--color-text-primary);font-weight:500}
+.panel{display:none}.panel.active{display:block}
+.drop-zone{border:1.5px dashed var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:1.25rem;text-align:center;cursor:pointer;transition:background 0.15s;margin-bottom:1rem}
+.drop-zone:hover,.drop-zone.drag-over{background:var(--color-background-secondary)}
+.drop-zone p{font-size:12px;color:var(--color-text-secondary);margin-top:5px}
+.controls{display:flex;align-items:center;gap:8px;margin-bottom:0.75rem;flex-wrap:wrap}
+.seg{display:flex;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);overflow:hidden}
+.seg button{font-size:12px;padding:4px 11px;border:none;background:transparent;color:var(--color-text-secondary);cursor:pointer;border-right:0.5px solid var(--color-border-secondary)}
+.seg button:last-child{border-right:none}
+.seg button.active{background:var(--color-background-secondary);color:var(--color-text-primary)}
+.sample-list{display:flex;flex-direction:column;gap:5px;margin-bottom:1rem}
+.sample-item{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);background:var(--color-background-primary);font-size:12px}
+.color-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;transition:opacity 0.2s}
+.sample-name{flex:1;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;transition:opacity 0.2s}
+.sample-meta{font-size:11px;color:var(--color-text-secondary);white-space:nowrap}
+.eye-btn{font-size:13px;border:none;background:none;cursor:pointer;padding:0 2px;opacity:0.5;line-height:1;color:var(--color-text-primary)}
+.eye-btn:hover{opacity:1}
+.eye-btn.hidden-eye{opacity:0.2}
+.remove-btn{font-size:14px;line-height:1;color:var(--color-text-secondary);cursor:pointer;border:none;background:none;padding:0 2px;opacity:0.4}
+.remove-btn:hover{opacity:1}
+.offset-row{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary)}
+.offset-input{width:58px;font-size:12px;padding:3px 6px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);text-align:right}
+.range-row{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:0.75rem}
+.range-label{font-size:12px;color:var(--color-text-secondary)}
+.range-input{width:62px;font-size:12px;padding:3px 6px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary)}
+.btn-small{font-size:12px;padding:3px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
+.btn-small:hover{background:var(--color-background-secondary)}
+.chart-wrap{width:100%;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden;margin-bottom:0.75rem}
+.empty-state{padding:2.5rem;text-align:center;color:var(--color-text-secondary);font-size:13px}
+.lr-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tb-grid{display:grid;grid-template-columns:1fr;gap:8px}
+.sub-wrap{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
+.sub-title{font-size:11px;font-weight:500;color:var(--color-text-secondary);padding:6px 10px;border-bottom:0.5px solid var(--color-border-tertiary)}
+.unit-btn{font-size:12px;padding:4px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
+.unit-btn.active{background:var(--color-background-secondary);color:var(--color-text-primary);border-color:var(--color-border-primary)}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:1rem}
+.info-card{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:9px 13px}
+.info-card .lbl{font-size:11px;color:var(--color-text-secondary);margin-bottom:3px;display:flex;align-items:center;gap:6px}
+.info-card .val{font-size:15px;font-weight:500;color:var(--color-text-primary)}
+.info-card .sub{font-size:11px;color:var(--color-text-secondary);margin-top:2px}
+</style>
+
+<div id="app">
+<h2 class="sr-only">XRD pattern viewer with thermal history — upload .ras files to visualize and compare</h2>
+
+<div class="drop-zone" id="dropZone">
+  <div style="font-size:18px">+</div>
+  <p>Drag &amp; drop .ras files / クリックで選択（複数可）</p>
+  <input type="file" id="fileInput" accept=".ras" multiple style="display:none">
+</div>
+
+<div id="sampleList" class="sample-list"></div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('xrd')">XRD パターン</button>
+  <button class="tab" onclick="switchTab('thermal')">熱履歴</button>
+</div>
+
+<div id="panelXrd" class="panel active">
+  <div id="xrdControls" style="display:none">
+    <div class="controls">
+      <span style="font-size:12px;color:var(--color-text-secondary)">表示モード:</span>
+      <div class="seg" id="segMode">
+        <button class="active" onclick="setXrdMode('overlay')">Overlay</button>
+        <button onclick="setXrdMode('stack')">Stack</button>
+        <button onclick="setXrdMode('split-lr')">左右分割</button>
+        <button onclick="setXrdMode('split-tb')">上下分割</button>
+      </div>
+    </div>
+    <div class="controls" id="overlayOpts">
+      <div class="offset-row">
+        <label style="font-size:12px">Offset:</label>
+        <input class="offset-input" type="number" id="offsetInput" value="30" step="5" min="0" max="500" oninput="updateOffset(this.value)">
+        <span style="font-size:12px">%</span>
+      </div>
+    </div>
+    <div class="range-row">
+      <span class="range-label">2θ:</span>
+      <input class="range-input" type="number" id="xMin" value="2" step="0.5" onchange="redrawXrd()">
+      <span class="range-label">–</span>
+      <input class="range-input" type="number" id="xMax" value="32" step="0.5" onchange="redrawXrd()">
+      <span class="range-label">°</span>
+      <button class="btn-small" onclick="document.getElementById('xMin').value=2;document.getElementById('xMax').value=32;redrawXrd()">Reset</button>
+    </div>
+    <div id="splitControls" style="display:none;margin-bottom:0.75rem">
+      <div class="controls">
+        <span style="font-size:12px;color:var(--color-text-secondary)">分割割り当て:</span>
+        <span style="font-size:11px;color:var(--color-text-secondary)">各サンプルの「A/B」ボタンで左右（上下）グループを選択</span>
+      </div>
+    </div>
+  </div>
+  <div id="xrdArea"></div>
+</div>
+
+<div id="panelThermal" class="panel">
+  <div id="thermalControls" style="display:none">
+    <div class="controls">
+      <span style="font-size:12px;color:var(--color-text-secondary)">時間軸:</span>
+      <button class="unit-btn active" onclick="setUnit('sec')">sec</button>
+      <button class="unit-btn" onclick="setUnit('min')">min</button>
+      <button class="unit-btn" onclick="setUnit('hour')">hour</button>
+    </div>
+  </div>
+  <div id="infoGrid" class="info-grid" style="display:none"></div>
+  <div class="chart-wrap" id="thermalWrap">
+    <div class="empty-state">ファイルをアップロードすると熱履歴が表示されます</div>
+    <canvas id="thermalChart" style="display:none"></canvas>
+  </div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const COLORS=['#378ADD','#1D9E75','#D85A30','#7F77DD','#D4537E','#639922','#BA7517','#E24B4A'];
+let samples=[];
+let xrdCharts=[];
+let thermalChart=null;
+let xrdMode='overlay';
+let offsetPct=30;
+let timeUnit='sec';
+
+const dropZone=document.getElementById('dropZone');
+const fileInput=document.getElementById('fileInput');
+dropZone.onclick=()=>fileInput.click();
+dropZone.ondragover=e=>{e.preventDefault();dropZone.classList.add('drag-over')};
+dropZone.ondragleave=()=>dropZone.classList.remove('drag-over');
+dropZone.ondrop=e=>{e.preventDefault();dropZone.classList.remove('drag-over');handleFiles(e.dataTransfer.files)};
+fileInput.onchange=e=>handleFiles(e.target.files);
+
+function handleFiles(files){
+  [...files].forEach(f=>{
+    if(!f.name.endsWith('.ras'))return;
+    const r=new FileReader();
+    r.onload=ev=>{
+      const p=parseRas(ev.target.result,f.name);
+      if(p){p.visible=true;p.group='A';samples.push(p);renderList();redrawXrd();redrawThermal();}
+    };
+    r.readAsText(f,'latin1');
+  });
+}
+
+function parseDateTime(s){
+  if(!s)return null;
+  const m=s.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+):(\d+)/);
+  if(!m)return null;
+  const[,mo,dd,yy,hh,mi,ss]=m;
+  return new Date(`20${yy}-${mo.padStart(2,'0')}-${dd.padStart(2,'0')}T${hh}:${mi}:${ss}`);
+}
+
+function parseRas(text,fname){
+  const lines=text.split(/\r?\n/);
+  let inData=false;
+  const tth=[],intensity=[];
+  let tempStart=null,tempEnd=null,timeStart=null,timeEnd=null;
+  for(const line of lines){
+    if(line.includes('*ATMOSPHERE_TEMP_START'))tempStart=parseFloat(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*ATMOSPHERE_TEMP_END'))tempEnd=parseFloat(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*MEAS_SCAN_START_TIME'))timeStart=parseDateTime(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*MEAS_SCAN_END_TIME'))timeEnd=parseDateTime(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*RAS_INT_START')){inData=true;continue;}
+    if(line.includes('*RAS_INT_END')){break;}
+    if(inData&&line.trim()){
+      const p=line.trim().split(/\s+/);
+      if(p.length>=2){tth.push(parseFloat(p[0]));intensity.push(parseFloat(p[1]));}
+    }
+  }
+  if(!tth.length)return null;
+  const maxI=Math.max(...intensity);
+  const maxIdx=intensity.indexOf(maxI);
+  return{name:fname.replace('.ras',''),tth,intensity,maxI,peakPos:tth[maxIdx].toFixed(2),color:COLORS[samples.length%COLORS.length],tempStart,tempEnd,timeStart,timeEnd};
+}
+
+function toggleVisible(i){
+  samples[i].visible=!samples[i].visible;
+  renderList();redrawXrd();
+}
+
+function toggleGroup(i){
+  samples[i].group=samples[i].group==='A'?'B':'A';
+  renderList();redrawXrd();
+}
+
+function removeSample(i){samples.splice(i,1);renderList();redrawXrd();redrawThermal();}
+
+function renderList(){
+  const el=document.getElementById('sampleList');
+  const isSplit=xrdMode==='split-lr'||xrdMode==='split-tb';
+  const lrLabel=xrdMode==='split-lr'?['左','右']:['上','下'];
+  el.innerHTML='';
+  samples.forEach((s,i)=>{
+    const dim=!s.visible;
+    const div=document.createElement('div');
+    div.className='sample-item';
+    div.style.opacity=dim?'0.45':'1';
+    const groupBtn=isSplit?`<button style="font-size:11px;padding:2px 8px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:${s.group==='A'?s.color+'22':'transparent'};color:var(--color-text-primary);cursor:pointer;margin-right:2px" onclick="toggleGroup(${i})">${s.group==='A'?lrLabel[0]:lrLabel[1]}</button>`:'';
+    div.innerHTML=`<div class="color-dot" style="background:${s.color}"></div>
+      <span class="sample-name">${s.name}</span>
+      <span class="sample-meta">peak ${s.peakPos}° | ${s.tempStart!=null?s.tempStart.toFixed(1):'-'}°C</span>
+      ${groupBtn}
+      <button class="eye-btn${dim?' hidden-eye':''}" onclick="toggleVisible(${i})" title="表示/非表示">👁</button>
+      <button class="remove-btn" onclick="removeSample(${i})">×</button>`;
+    el.appendChild(div);
+  });
+  const show=samples.length>0;
+  document.getElementById('xrdControls').style.display=show?'block':'none';
+  document.getElementById('thermalControls').style.display=show?'block':'none';
+  document.getElementById('infoGrid').style.display=show?'grid':'none';
+  document.getElementById('splitControls').style.display=(show&&isSplit)?'block':'none';
+}
+
+function switchTab(t){
+  document.querySelectorAll('.tab').forEach((b,i)=>b.classList.toggle('active',['xrd','thermal'][i]===t));
+  document.getElementById('panelXrd').classList.toggle('active',t==='xrd');
+  document.getElementById('panelThermal').classList.toggle('active',t==='thermal');
+}
+
+function setXrdMode(m){
+  xrdMode=m;
+  document.querySelectorAll('#segMode button').forEach((b,i)=>b.classList.toggle('active',['overlay','stack','split-lr','split-tb'][i]===m));
+  document.getElementById('overlayOpts').style.display=m==='overlay'?'flex':'none';
+  document.getElementById('splitControls').style.display=(m==='split-lr'||m==='split-tb')&&samples.length?'block':'none';
+  renderList();redrawXrd();
+}
+
+function updateOffset(v){
+  offsetPct=parseFloat(v)||0;
+  redrawXrd();
+}
+
+function getVisibleSamples(){return samples.filter(s=>s.visible);}
+
+function buildDatasets(slist,baseOffset=0){
+  const xMin=parseFloat(document.getElementById('xMin').value)||2;
+  const xMax=parseFloat(document.getElementById('xMax').value)||32;
+  const maxAll=slist.length?Math.max(...slist.map(s=>s.maxI)):1;
+  const datasets=[];
+  if(xrdMode==='overlay'){
+    slist.forEach((s,i)=>{
+      const pts=s.tth.map((x,j)=>({x,y:s.intensity[j]+i*(maxAll*offsetPct/100)})).filter(p=>p.x>=xMin&&p.x<=xMax);
+      datasets.push({label:s.name,data:pts,borderColor:s.color,borderWidth:1.2,pointRadius:0,fill:false,tension:0});
+    });
+  } else if(xrdMode==='stack'){
+    let cum=baseOffset;
+    slist.forEach(s=>{
+      const pts=s.tth.map((x,j)=>({x,y:s.intensity[j]+cum})).filter(p=>p.x>=xMin&&p.x<=xMax);
+      cum+=s.maxI*1.15;
+      datasets.push({label:s.name,data:pts,borderColor:s.color,borderWidth:1.2,pointRadius:0,fill:false,tension:0});
+    });
+  } else {
+    slist.forEach((s,i)=>{
+      const pts=s.tth.map((x,j)=>({x,y:s.intensity[j]+i*(maxAll*offsetPct/100)})).filter(p=>p.x>=xMin&&p.x<=xMax);
+      datasets.push({label:s.name,data:pts,borderColor:s.color,borderWidth:1.2,pointRadius:0,fill:false,tension:0});
+    });
+  }
+  return datasets;
+}
+
+function makeChartConfig(datasets,aspect){
+  const xMin=parseFloat(document.getElementById('xMin').value)||2;
+  const xMax=parseFloat(document.getElementById('xMax').value)||32;
+  return{type:'line',data:{datasets},options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:true,aspectRatio:aspect,
+    plugins:{legend:{display:true,position:'top',labels:{boxWidth:9,font:{size:10},padding:8}},
+      tooltip:{callbacks:{label:d=>`${d.dataset.label}: ${Math.round(d.parsed.y)} cps`}}},
+    scales:{x:{type:'linear',title:{display:true,text:'2θ (°)',font:{size:10}},min:xMin,max:xMax,ticks:{maxTicksLimit:8,font:{size:10}}},
+      y:{title:{display:true,text:'Intensity (cps)',font:{size:10}},ticks:{font:{size:10}}}}}};
+}
+
+function redrawXrd(){
+  xrdCharts.forEach(c=>c.destroy());
+  xrdCharts=[];
+  const area=document.getElementById('xrdArea');
+  area.innerHTML='';
+  const vis=getVisibleSamples();
+  if(!vis.length){
+    area.innerHTML='<div class="chart-wrap"><div class="empty-state">ファイルをアップロードするとXRDパターンが表示されます</div></div>';
+    return;
+  }
+  if(xrdMode==='overlay'||xrdMode==='stack'){
+    const wrap=document.createElement('div');wrap.className='chart-wrap';
+    const canvas=document.createElement('canvas');
+    wrap.appendChild(canvas);area.appendChild(wrap);
+    const datasets=buildDatasets(vis);
+    const aspect=xrdMode==='stack'?Math.max(1.2,vis.length*0.6):2.2;
+    xrdCharts.push(new Chart(canvas.getContext('2d'),makeChartConfig(datasets,aspect)));
+  } else {
+    const isLR=xrdMode==='split-lr';
+    const lrLabel=isLR?['左パネル','右パネル']:['上パネル','下パネル'];
+    const gA=vis.filter(s=>s.group==='A');
+    const gB=vis.filter(s=>s.group==='B');
+    const grid=document.createElement('div');
+    grid.className=isLR?'lr-grid':'tb-grid';
+    area.appendChild(grid);
+    [[gA,lrLabel[0]],[gB,lrLabel[1]]].forEach(([grp,label])=>{
+      const wrap=document.createElement('div');wrap.className='sub-wrap';
+      const title=document.createElement('div');title.className='sub-title';title.textContent=label+`（${grp.length}件）`;
+      const canvas=document.createElement('canvas');
+      wrap.appendChild(title);wrap.appendChild(canvas);grid.appendChild(wrap);
+      if(grp.length){
+        const datasets=buildDatasets(grp);
+        xrdCharts.push(new Chart(canvas.getContext('2d'),makeChartConfig(datasets,isLR?1.5:2.4)));
+      } else {
+        canvas.style.display='none';
+        const em=document.createElement('div');em.className='empty-state';em.textContent='サンプルなし';
+        wrap.appendChild(em);
+      }
+    });
+  }
+}
+
+function setUnit(u){
+  timeUnit=u;
+  document.querySelectorAll('.unit-btn').forEach(b=>b.classList.toggle('active',b.textContent===u));
+  redrawThermal();
+}
+
+function toUnitVal(sec){
+  if(timeUnit==='min')return parseFloat((sec/60).toFixed(2));
+  if(timeUnit==='hour')return parseFloat((sec/3600).toFixed(3));
+  return sec;
+}
+
+function redrawThermal(){
+  const canvas=document.getElementById('thermalChart');
+  const wrap=document.getElementById('thermalWrap');
+  const empty=wrap.querySelector('.empty-state');
+  const valid=samples.filter(s=>s.visible&&s.timeStart&&s.timeEnd&&s.tempStart!=null);
+  if(!valid.length){
+    canvas.style.display='none';if(empty)empty.style.display='block';
+    if(thermalChart){thermalChart.destroy();thermalChart=null;}
+    renderInfoGrid([]);return;
+  }
+  canvas.style.display='block';if(empty)empty.style.display='none';
+  const t0=Math.min(...valid.map(s=>s.timeStart.getTime()));
+  const datasets=valid.map(s=>{
+    const s0=toUnitVal((s.timeStart.getTime()-t0)/1000);
+    const s1=toUnitVal((s.timeEnd.getTime()-t0)/1000);
+    const dur=toUnitVal((s.timeEnd.getTime()-s.timeStart.getTime())/1000);
+    return{label:s.name,data:[{x:s0,y:s.tempStart},{x:s1,y:s.tempEnd}],borderColor:s.color,backgroundColor:s.color+'33',borderWidth:2,pointRadius:5,pointHoverRadius:7,fill:false,tension:0,_dur:dur,_s:s};
+  });
+  if(thermalChart)thermalChart.destroy();
+  thermalChart=new Chart(canvas.getContext('2d'),{type:'line',data:{datasets},options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:true,aspectRatio:2.2,
+    plugins:{legend:{display:true,position:'top',labels:{boxWidth:9,font:{size:11},padding:10}},
+      tooltip:{callbacks:{label:ctx=>[`${ctx.dataset.label}`,`温度: ${ctx.parsed.y.toFixed(1)} °C`,`経過: ${ctx.parsed.x.toFixed(timeUnit==='hour'?3:2)} ${timeUnit}`,`測定時間: ${ctx.dataset._dur.toFixed(timeUnit==='hour'?3:2)} ${timeUnit}`]}}},
+    scales:{x:{type:'linear',title:{display:true,text:timeUnit==='sec'?'秒 (sec)':timeUnit==='min'?'分 (min)':'時間 (hour)',font:{size:11}},ticks:{font:{size:11}}},
+      y:{title:{display:true,text:'温度 (°C)',font:{size:11}},ticks:{font:{size:11}}}}}});
+  renderInfoGrid(valid,t0);
+}
+
+function renderInfoGrid(valid,t0){
+  const el=document.getElementById('infoGrid');
+  if(!valid.length){el.innerHTML='';return;}
+  el.innerHTML=valid.map(s=>{
+    const dur=(s.timeEnd-s.timeStart)/1000;
+    const elapsed=(s.timeStart-t0)/1000;
+    const fmt=v=>timeUnit==='sec'?Math.round(v)+'s':timeUnit==='min'?(v/60).toFixed(1)+'min':(v/3600).toFixed(2)+'h';
+    return`<div class="info-card"><div class="lbl"><div style="width:8px;height:8px;border-radius:50%;background:${s.color}"></div>${s.name}</div>
+      <div class="val">${s.tempStart.toFixed(1)} → ${s.tempEnd!=null?s.tempEnd.toFixed(1):'-'} °C</div>
+      <div class="sub">測定時間: ${fmt(dur)} | オフセット: ${fmt(elapsed)}</div>
+      <div class="sub">${s.timeStart.toLocaleString('ja-JP')}</div></div>`;
+  }).join('');
+}
+</script>

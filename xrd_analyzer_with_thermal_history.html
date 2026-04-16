@@ -1,0 +1,319 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+#app{padding:1rem 0}
+h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.tabs{display:flex;gap:4px;margin-bottom:1.5rem;border-bottom:0.5px solid var(--color-border-tertiary);padding-bottom:0}
+.tab{font-size:13px;padding:7px 16px;border:none;background:none;color:var(--color-text-secondary);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-0.5px}
+.tab.active{color:var(--color-text-primary);border-bottom:2px solid var(--color-text-primary);font-weight:500}
+.panel{display:none}.panel.active{display:block}
+.drop-zone{border:1.5px dashed var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:1.5rem;text-align:center;cursor:pointer;transition:background 0.15s;margin-bottom:1rem}
+.drop-zone:hover,.drop-zone.drag-over{background:var(--color-background-secondary)}
+.drop-zone p{font-size:13px;color:var(--color-text-secondary);margin-top:6px}
+.controls{display:flex;align-items:center;gap:10px;margin-bottom:1rem;flex-wrap:wrap}
+.mode-btn{font-size:12px;padding:4px 12px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer;transition:all 0.15s}
+.mode-btn.active{background:var(--color-background-secondary);color:var(--color-text-primary);border-color:var(--color-border-primary)}
+.sample-list{display:flex;flex-direction:column;gap:5px;margin-bottom:1rem}
+.sample-item{display:flex;align-items:center;gap:9px;padding:6px 11px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);background:var(--color-background-primary);font-size:12px}
+.color-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.sample-name{flex:1;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sample-meta{font-size:11px;color:var(--color-text-secondary);white-space:nowrap}
+.remove-btn{font-size:15px;line-height:1;color:var(--color-text-secondary);cursor:pointer;border:none;background:none;padding:0 2px;opacity:0.5}
+.remove-btn:hover{opacity:1}
+.chart-wrap{position:relative;width:100%;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden;margin-bottom:1rem}
+.empty-state{padding:2.5rem;text-align:center;color:var(--color-text-secondary);font-size:13px}
+.range-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:1rem}
+.range-label{font-size:12px;color:var(--color-text-secondary)}
+.range-input{width:65px;font-size:12px;padding:3px 7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary)}
+.btn-small{font-size:12px;padding:4px 12px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
+.btn-small:hover{background:var(--color-background-secondary)}
+.offset-row{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--color-text-secondary)}
+#offsetVal{font-size:12px;font-weight:500;color:var(--color-text-primary);min-width:28px}
+.unit-btn{font-size:12px;padding:4px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
+.unit-btn.active{background:var(--color-background-secondary);color:var(--color-text-primary);border-color:var(--color-border-primary)}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:1rem}
+.info-card{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 14px}
+.info-card .label{font-size:11px;color:var(--color-text-secondary);margin-bottom:4px}
+.info-card .value{font-size:16px;font-weight:500;color:var(--color-text-primary)}
+.info-card .sub{font-size:11px;color:var(--color-text-secondary);margin-top:2px}
+</style>
+
+<div id="app">
+<h2 class="sr-only">XRD pattern viewer with thermal history — upload .ras files to visualize diffraction patterns and measurement timeline</h2>
+
+<div class="drop-zone" id="dropZone">
+  <div style="font-size:20px">+</div>
+  <p>Drag &amp; drop .ras files here, or click to select (複数可)</p>
+  <input type="file" id="fileInput" accept=".ras" multiple style="display:none">
+</div>
+
+<div id="sampleList" class="sample-list"></div>
+
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('xrd')">XRD パターン</button>
+  <button class="tab" onclick="switchTab('thermal')">熱履歴</button>
+</div>
+
+<div id="panelXrd" class="panel active">
+  <div id="xrdControls" style="display:none">
+    <div class="controls">
+      <button class="mode-btn active" id="btnOverlay" onclick="setXrdMode('overlay')">Overlay</button>
+      <button class="mode-btn" id="btnStack" onclick="setXrdMode('stack')">Stack</button>
+      <div class="offset-row" id="offsetRow">
+        <label for="offsetSlider" style="font-size:12px">Offset</label>
+        <input type="range" id="offsetSlider" min="0" max="200" value="30" step="1" style="width:90px" oninput="updateOffset(this.value)">
+        <span id="offsetVal">30%</span>
+      </div>
+    </div>
+    <div class="range-row">
+      <span class="range-label">2θ range:</span>
+      <input class="range-input" type="number" id="xMin" value="2" step="0.5" onchange="redrawXrd()">
+      <span class="range-label">–</span>
+      <input class="range-input" type="number" id="xMax" value="32" step="0.5" onchange="redrawXrd()">
+      <span class="range-label">°</span>
+      <button class="btn-small" onclick="document.getElementById('xMin').value=2;document.getElementById('xMax').value=32;redrawXrd()">Reset</button>
+    </div>
+  </div>
+  <div class="chart-wrap" id="xrdWrap">
+    <div class="empty-state">ファイルをアップロードするとXRDパターンが表示されます</div>
+    <canvas id="xrdChart" style="display:none"></canvas>
+  </div>
+</div>
+
+<div id="panelThermal" class="panel">
+  <div id="thermalControls" style="display:none">
+    <div class="controls" style="margin-bottom:0.75rem">
+      <span style="font-size:12px;color:var(--color-text-secondary)">時間軸単位:</span>
+      <button class="unit-btn active" onclick="setUnit('sec')">sec</button>
+      <button class="unit-btn" onclick="setUnit('min')">min</button>
+      <button class="unit-btn" onclick="setUnit('hour')">hour</button>
+    </div>
+  </div>
+  <div id="infoGrid" class="info-grid" style="display:none"></div>
+  <div class="chart-wrap" id="thermalWrap">
+    <div class="empty-state">ファイルをアップロードすると熱履歴が表示されます</div>
+    <canvas id="thermalChart" style="display:none"></canvas>
+  </div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const COLORS=['#378ADD','#1D9E75','#D85A30','#7F77DD','#D4537E','#639922','#BA7517','#E24B4A'];
+let samples=[];
+let xrdChart=null,thermalChart=null;
+let xrdMode='overlay';
+let offsetPct=30;
+let timeUnit='sec';
+let activeTab='xrd';
+
+const dropZone=document.getElementById('dropZone');
+const fileInput=document.getElementById('fileInput');
+dropZone.onclick=()=>fileInput.click();
+dropZone.ondragover=e=>{e.preventDefault();dropZone.classList.add('drag-over')};
+dropZone.ondragleave=()=>dropZone.classList.remove('drag-over');
+dropZone.ondrop=e=>{e.preventDefault();dropZone.classList.remove('drag-over');handleFiles(e.dataTransfer.files)};
+fileInput.onchange=e=>handleFiles(e.target.files);
+
+function handleFiles(files){
+  [...files].forEach(f=>{
+    if(!f.name.endsWith('.ras'))return;
+    const r=new FileReader();
+    r.onload=ev=>{
+      const parsed=parseRas(ev.target.result,f.name);
+      if(parsed){samples.push(parsed);renderList();redrawXrd();redrawThermal();}
+    };
+    r.readAsText(f,'latin1');
+  });
+}
+
+function parseDateTime(s){
+  if(!s)return null;
+  const m=s.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+):(\d+)/);
+  if(!m)return null;
+  const [,mo,dd,yy,hh,mi,ss]=m;
+  return new Date(`20${yy}-${mo.padStart(2,'0')}-${dd.padStart(2,'0')}T${hh}:${mi}:${ss}`);
+}
+
+function parseRas(text,fname){
+  const lines=text.split(/\r?\n/);
+  let inData=false;
+  const tth=[],intensity=[];
+  let tempStart=null,tempEnd=null,timeStart=null,timeEnd=null;
+  for(const line of lines){
+    if(line.includes('*ATMOSPHERE_TEMP_START'))tempStart=parseFloat(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*ATMOSPHERE_TEMP_END'))tempEnd=parseFloat(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*MEAS_SCAN_START_TIME'))timeStart=parseDateTime(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*MEAS_SCAN_END_TIME'))timeEnd=parseDateTime(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*RAS_INT_START')){inData=true;continue;}
+    if(line.includes('*RAS_INT_END')){break;}
+    if(inData&&line.trim()){
+      const p=line.trim().split(/\s+/);
+      if(p.length>=2){tth.push(parseFloat(p[0]));intensity.push(parseFloat(p[1]));}
+    }
+  }
+  if(!tth.length)return null;
+  const maxI=Math.max(...intensity);
+  const maxIdx=intensity.indexOf(maxI);
+  return{name:fname.replace('.ras',''),tth,intensity,maxI,peakPos:tth[maxIdx].toFixed(2),color:COLORS[samples.length%COLORS.length],tempStart,tempEnd,timeStart,timeEnd};
+}
+
+function removeSample(i){samples.splice(i,1);renderList();redrawXrd();redrawThermal();}
+
+function renderList(){
+  const el=document.getElementById('sampleList');
+  el.innerHTML='';
+  samples.forEach((s,i)=>{
+    const div=document.createElement('div');
+    div.className='sample-item';
+    const tLabel=s.timeStart?s.timeStart.toLocaleDateString('ja-JP',{month:'2-digit',day:'2-digit'})+' '+s.timeStart.toTimeString().slice(0,5):'--';
+    div.innerHTML=`<div class="color-dot" style="background:${s.color}"></div>
+      <span class="sample-name">${s.name}</span>
+      <span class="sample-meta">peak ${s.peakPos}° | ${tLabel} | ${s.tempStart!=null?s.tempStart.toFixed(1):'?'}°C</span>
+      <button class="remove-btn" onclick="removeSample(${i})">×</button>`;
+    el.appendChild(div);
+  });
+  const show=samples.length>0;
+  document.getElementById('xrdControls').style.display=show?'block':'none';
+  document.getElementById('thermalControls').style.display=show?'block':'none';
+  document.getElementById('infoGrid').style.display=show?'grid':'none';
+}
+
+function switchTab(t){
+  activeTab=t;
+  document.querySelectorAll('.tab').forEach((el,i)=>el.classList.toggle('active',['xrd','thermal'][i]===t));
+  document.getElementById('panelXrd').classList.toggle('active',t==='xrd');
+  document.getElementById('panelThermal').classList.toggle('active',t==='thermal');
+}
+
+function setUnit(u){
+  timeUnit=u;
+  document.querySelectorAll('.unit-btn').forEach(b=>b.classList.toggle('active',b.textContent===u));
+  redrawThermal();
+}
+
+function setXrdMode(m){
+  xrdMode=m;
+  document.getElementById('btnOverlay').classList.toggle('active',m==='overlay');
+  document.getElementById('btnStack').classList.toggle('active',m==='stack');
+  document.getElementById('offsetRow').style.display=m==='overlay'?'flex':'none';
+  redrawXrd();
+}
+
+function updateOffset(v){
+  offsetPct=parseInt(v);
+  document.getElementById('offsetVal').textContent=v+'%';
+  redrawXrd();
+}
+
+function redrawXrd(){
+  const canvas=document.getElementById('xrdChart');
+  const empty=document.getElementById('xrdWrap').querySelector('.empty-state');
+  if(!samples.length){
+    canvas.style.display='none';if(empty)empty.style.display='block';
+    if(xrdChart){xrdChart.destroy();xrdChart=null;}return;
+  }
+  canvas.style.display='block';if(empty)empty.style.display='none';
+  const xMin=parseFloat(document.getElementById('xMin').value)||2;
+  const xMax=parseFloat(document.getElementById('xMax').value)||32;
+  const datasets=[];
+  const maxAll=Math.max(...samples.map(s=>s.maxI));
+  if(xrdMode==='overlay'){
+    samples.forEach((s,i)=>{
+      const pts=s.tth.map((x,j)=>({x,y:s.intensity[j]+i*(maxAll*offsetPct/100)})).filter(p=>p.x>=xMin&&p.x<=xMax);
+      datasets.push({label:s.name,data:pts,borderColor:s.color,borderWidth:1.2,pointRadius:0,fill:false,tension:0});
+    });
+  } else {
+    canvas.style.height=Math.max(200,samples.length*110)+'px';
+    let cum=0;
+    samples.forEach((s,i)=>{
+      const pts=s.tth.map((x,j)=>({x,y:s.intensity[j]+cum})).filter(p=>p.x>=xMin&&p.x<=xMax);
+      cum+=s.maxI*1.15;
+      datasets.push({label:s.name,data:pts,borderColor:s.color,borderWidth:1.2,pointRadius:0,fill:false,tension:0});
+    });
+  }
+  if(xrdChart)xrdChart.destroy();
+  xrdChart=new Chart(document.getElementById('xrdChart').getContext('2d'),{
+    type:'line',data:{datasets},
+    options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:xrdMode==='overlay',aspectRatio:2.2,
+      plugins:{legend:{display:true,position:'top',labels:{boxWidth:9,font:{size:11},padding:10}},
+        tooltip:{callbacks:{label:d=>`${d.dataset.label}: ${Math.round(d.parsed.y)} cps`}}},
+      scales:{x:{type:'linear',title:{display:true,text:'2θ (degrees)',font:{size:11}},min:xMin,max:xMax,ticks:{maxTicksLimit:10,font:{size:11}}},
+        y:{title:{display:true,text:'Intensity (cps)',font:{size:11}},ticks:{font:{size:11}}}}}
+  });
+}
+
+function toUnitVal(sec){
+  if(timeUnit==='sec')return sec;
+  if(timeUnit==='min')return parseFloat((sec/60).toFixed(2));
+  return parseFloat((sec/3600).toFixed(3));
+}
+
+function unitLabel(){return timeUnit==='sec'?'秒 (sec)':timeUnit==='min'?'分 (min)':'時間 (hour)';}
+
+function redrawThermal(){
+  const canvas=document.getElementById('thermalChart');
+  const wrap=document.getElementById('thermalWrap');
+  const empty=wrap.querySelector('.empty-state');
+  const valid=samples.filter(s=>s.timeStart&&s.timeEnd&&s.tempStart!=null&&s.tempEnd!=null);
+  if(!valid.length){
+    canvas.style.display='none';if(empty)empty.style.display='block';
+    if(thermalChart){thermalChart.destroy();thermalChart=null;}
+    renderInfoGrid([]);return;
+  }
+  canvas.style.display='block';if(empty)empty.style.display='none';
+
+  const t0=Math.min(...valid.map(s=>s.timeStart.getTime()));
+  const datasets=[];
+  valid.forEach(s=>{
+    const s0=toUnitVal((s.timeStart.getTime()-t0)/1000);
+    const s1=toUnitVal((s.timeEnd.getTime()-t0)/1000);
+    const dur=toUnitVal((s.timeEnd.getTime()-s.timeStart.getTime())/1000);
+    datasets.push({
+      label:s.name,
+      data:[{x:s0,y:s.tempStart},{x:s1,y:s.tempEnd}],
+      borderColor:s.color,backgroundColor:s.color+'33',
+      borderWidth:2,pointRadius:5,pointHoverRadius:7,fill:false,tension:0,
+      _dur:dur,_s:s
+    });
+  });
+
+  if(thermalChart)thermalChart.destroy();
+  thermalChart=new Chart(canvas.getContext('2d'),{
+    type:'line',data:{datasets},
+    options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:true,aspectRatio:2.2,
+      plugins:{legend:{display:true,position:'top',labels:{boxWidth:9,font:{size:11},padding:10}},
+        tooltip:{callbacks:{label:ctx=>{
+          const s=ctx.dataset._s;
+          const dur=ctx.dataset._dur;
+          return [`${ctx.dataset.label}`,`温度: ${ctx.parsed.y.toFixed(1)} °C`,`経過時間: ${ctx.parsed.x.toFixed(timeUnit==='hour'?3:2)} ${timeUnit}`,`測定時間: ${dur.toFixed(timeUnit==='hour'?3:2)} ${timeUnit}`];
+        }}}},
+      scales:{
+        x:{type:'linear',title:{display:true,text:unitLabel(),font:{size:11}},ticks:{font:{size:11}},grid:{color:'var(--color-border-tertiary)'}},
+        y:{title:{display:true,text:'温度 (°C)',font:{size:11}},ticks:{font:{size:11}},grid:{color:'var(--color-border-tertiary)'}}
+      }}
+  });
+  renderInfoGrid(valid);
+}
+
+function renderInfoGrid(valid){
+  const el=document.getElementById('infoGrid');
+  if(!valid.length){el.innerHTML='';return;}
+  const t0=Math.min(...valid.map(s=>s.timeStart.getTime()));
+  el.innerHTML=valid.map(s=>{
+    const dur=(s.timeEnd-s.timeStart)/1000;
+    const elapsed=(s.timeStart-t0)/1000;
+    const durDisp=timeUnit==='sec'?Math.round(dur)+'s':timeUnit==='min'?(dur/60).toFixed(1)+'min':(dur/3600).toFixed(2)+'h';
+    const elDisp=timeUnit==='sec'?Math.round(elapsed)+'s':timeUnit==='min'?(elapsed/60).toFixed(1)+'min':(elapsed/3600).toFixed(2)+'h';
+    return `<div class="info-card">
+      <div class="label" style="display:flex;align-items:center;gap:6px">
+        <div style="width:8px;height:8px;border-radius:50%;background:${s.color};flex-shrink:0"></div>${s.name}
+      </div>
+      <div class="value">${s.tempStart!=null?s.tempStart.toFixed(1):'-'} → ${s.tempEnd!=null?s.tempEnd.toFixed(1):'-'} °C</div>
+      <div class="sub">測定時間: ${durDisp} | 開始オフセット: ${elDisp}</div>
+      <div class="sub">${s.timeStart.toLocaleString('ja-JP')}</div>
+    </div>`;
+  }).join('');
+}
+</script>

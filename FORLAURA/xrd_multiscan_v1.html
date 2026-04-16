@@ -1,0 +1,383 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+#app{padding:1rem 0}
+h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.drop-zone{border:1.5px dashed var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:1.1rem;text-align:center;cursor:pointer;transition:background 0.15s;margin-bottom:1rem}
+.drop-zone:hover,.drop-zone.drag-over{background:var(--color-background-secondary)}
+.drop-zone p{font-size:12px;color:var(--color-text-secondary);margin-top:4px}
+.section-title{font-size:12px;font-weight:500;color:var(--color-text-secondary);margin-bottom:6px}
+.dataset-block{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);margin-bottom:10px;overflow:hidden;background:var(--color-background-primary)}
+.dataset-header{display:flex;align-items:center;gap:8px;padding:7px 12px;background:var(--color-background-secondary);border-bottom:0.5px solid var(--color-border-tertiary)}
+.dataset-name-input{font-size:13px;font-weight:500;color:var(--color-text-primary);background:transparent;border:none;outline:none;flex:1;min-width:0}
+.dataset-name-input:focus{background:var(--color-background-primary);border-radius:4px;padding:1px 4px}
+.dataset-meta{font-size:11px;color:var(--color-text-secondary);white-space:nowrap}
+.scan-list{display:flex;flex-direction:column}
+.scan-row{display:flex;align-items:center;gap:7px;padding:4px 12px;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px;cursor:grab;user-select:none;transition:background 0.1s}
+.scan-row:last-child{border-bottom:none}
+.scan-row.dragging{opacity:0.4}
+.scan-row.drag-over-scan{background:var(--color-background-secondary)}
+.color-swatch{width:20px;height:3px;border-radius:2px;flex-shrink:0}
+.scan-name-input{flex:1;font-size:12px;color:var(--color-text-primary);background:transparent;border:none;outline:none;min-width:0}
+.scan-name-input:focus{background:var(--color-background-secondary);border-radius:3px;padding:0 3px}
+.scan-meta{font-size:11px;color:var(--color-text-secondary);white-space:nowrap}
+.eye-btn{font-size:11px;border:none;background:none;cursor:pointer;padding:0 1px;line-height:1;color:var(--color-text-primary);opacity:0.45}
+.eye-btn:hover{opacity:1}.eye-btn.off{opacity:0.15}
+.remove-btn{font-size:13px;line-height:1;color:var(--color-text-secondary);cursor:pointer;border:none;background:none;padding:0 1px;opacity:0.3}
+.remove-btn:hover{opacity:1}
+.drag-handle{font-size:12px;color:var(--color-text-secondary);opacity:0.35;cursor:grab;line-height:1}
+.controls{display:flex;gap:7px;margin-bottom:1rem;align-items:center;flex-wrap:wrap}
+.seg{display:flex;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);overflow:hidden}
+.seg button{font-size:12px;padding:4px 11px;border:none;background:transparent;color:var(--color-text-secondary);cursor:pointer;border-right:0.5px solid var(--color-border-secondary)}
+.seg button:last-child{border-right:none}
+.seg button.active{background:var(--color-background-secondary);color:var(--color-text-primary)}
+.ctrl-lbl{font-size:11px;color:var(--color-text-secondary)}
+.num-input{width:55px;font-size:11px;padding:2px 5px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);text-align:right}
+.btn-xs{font-size:11px;padding:3px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
+.btn-xs:hover{background:var(--color-background-secondary)}
+.btn-export{font-size:11px;padding:3px 11px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer;display:flex;align-items:center;gap:4px}
+.btn-export:hover{background:var(--color-background-secondary)}
+.export-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:1rem}
+.chart-wrap{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
+.empty-state{padding:2.5rem;text-align:center;color:var(--color-text-secondary);font-size:12px}
+canvas{display:block;width:100%}
+.split-grid{display:grid;gap:8px}
+</style>
+
+<div id="app">
+<h2 class="sr-only">XRD multi-scan viewer — supports .ras and .txt (2θ + multi-column intensity)</h2>
+
+<div class="drop-zone" id="dropZone">
+  <div style="font-size:18px">+</div>
+  <p>Drop <strong>.ras</strong> or <strong>.txt</strong> files here — .txt: col 1 = 2θ, col 2… = repeated scans</p>
+  <input type="file" id="fileInput" accept=".ras,.txt" multiple style="display:none">
+</div>
+
+<div id="datasetPanel"></div>
+
+<div class="controls">
+  <span class="ctrl-lbl">Mode:</span>
+  <div class="seg" id="segMode">
+    <button class="active" onclick="setMode('overlay')">Overlay</button>
+    <button onclick="setMode('stack')">Stack</button>
+    <button onclick="setMode('split-lr')">Split L/R</button>
+    <button onclick="setMode('split-tb')">Split T/B</button>
+  </div>
+  <span class="ctrl-lbl" id="offsetLabel">Offset:</span>
+  <input class="num-input" type="number" id="offsetInput" value="30" step="5" min="0" max="500" oninput="redraw()" id="offsetInput">
+  <span class="ctrl-lbl">%</span>
+</div>
+<div class="controls">
+  <span class="ctrl-lbl">2θ:</span>
+  <input class="num-input" type="number" id="xMin" value="1" step="0.5" onchange="redraw()">
+  <span class="ctrl-lbl">–</span>
+  <input class="num-input" type="number" id="xMax" value="28" step="0.5" onchange="redraw()">
+  <span class="ctrl-lbl">°</span>
+  <button class="btn-xs" onclick="resetRange()">Reset</button>
+</div>
+
+<div class="export-row">
+  <span class="ctrl-lbl">Export:</span>
+  <button class="btn-export" onclick="exportPNG()">PNG</button>
+  <button class="btn-export" onclick="exportSVG()">SVG</button>
+  <button class="btn-export" onclick="exportPDF()">PDF</button>
+</div>
+
+<div class="chart-wrap" id="chartWrap">
+  <div class="empty-state" id="emptyState">Upload .ras or .txt files to display XRD patterns</div>
+  <div id="chartArea"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+// ── palette: 30 distinguishable colors cycling
+const PAL=["#378ADD","#1D9E75","#D85A30","#7F77DD","#D4537E","#639922","#BA7517","#E24B4A",
+  "#0C447C","#085041","#993C1D","#722445","#3B6D11","#854F0B","#A32D2D","#534AB7",
+  "#5DCAA5","#F09575","#AFA9EC","#ED93B1","#97C459","#EF9F27","#E24B4A","#85B7EB",
+  "#9FE1CB","#F5C4B3","#CEC BF6","#F4C0D1","#C0DD97","#FAC775"];
+function pal(i){return PAL[i%PAL.length];}
+
+// ── state
+let datasets=[]; // [{id, name, scans:[{name,tth,intensity,visible,color}], visible}]
+let charts=[];
+let mode='overlay';
+let xrdRangeSet=false;
+let dragSrc=null; // {dsIdx, scanIdx}
+
+// ── file input
+const dropZone=document.getElementById('dropZone');
+const fileInput=document.getElementById('fileInput');
+dropZone.onclick=()=>fileInput.click();
+dropZone.ondragover=e=>{e.preventDefault();dropZone.classList.add('drag-over')};
+dropZone.ondragleave=()=>dropZone.classList.remove('drag-over');
+dropZone.ondrop=e=>{e.preventDefault();dropZone.classList.remove('drag-over');handleFiles(e.dataTransfer.files)};
+fileInput.onchange=e=>handleFiles(e.target.files);
+
+function naturalKey(s){return s.split(/(\d+)/).map((c,i)=>i%2===0?c.toLowerCase():parseInt(c,10));}
+function naturalCmp(a,b){const ka=naturalKey(a),kb=naturalKey(b);for(let i=0;i<Math.max(ka.length,kb.length);i++){const ai=ka[i]??'',bi=kb[i]??'';if(ai<bi)return -1;if(ai>bi)return 1;}return 0;}
+
+function handleFiles(files){
+  const sorted=[...files].sort((a,b)=>naturalCmp(a.name,b.name));
+  sorted.forEach(f=>{
+    const r=new FileReader();
+    r.onload=ev=>{
+      let ds=null;
+      if(f.name.endsWith('.ras'))ds=parseRas(ev.target.result,f.name);
+      else if(f.name.endsWith('.txt'))ds=parseTxt(ev.target.result,f.name);
+      if(ds){
+        // assign colors
+        const baseIdx=datasets.reduce((s,d)=>s+d.scans.length,0);
+        ds.scans.forEach((sc,i)=>sc.color=pal(baseIdx+i));
+        datasets.push(ds);
+        // auto-set range from first file
+        if(!xrdRangeSet&&ds.scans.length){
+          const tth=ds.scans[0].tth;
+          document.getElementById('xMin').value=Math.floor(tth[0]*10)/10;
+          document.getElementById('xMax').value=Math.ceil(tth[tth.length-1]*10)/10;
+          xrdRangeSet=true;
+        }
+        renderAll();
+      }
+    };
+    r.readAsText(f,'latin1');
+  });
+}
+
+// ── parsers
+function parseDateTime(s){if(!s)return null;const m=s.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+):(\d+)/);if(!m)return null;const[,mo,dd,yy,hh,mi,ss]=m;return new Date(`20${yy}-${mo.padStart(2,'0')}-${dd.padStart(2,'0')}T${hh}:${mi}:${ss}`);}
+
+function parseRas(text,fname){
+  const lines=text.split(/\r?\n/);
+  let inData=false;const tth=[],intensity=[];
+  let tempStart=null,timeStart=null,timeEnd=null,tempEnd=null;
+  for(const line of lines){
+    if(line.includes('*ATMOSPHERE_TEMP_START'))tempStart=parseFloat(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*ATMOSPHERE_TEMP_END'))tempEnd=parseFloat(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*MEAS_SCAN_START_TIME'))timeStart=parseDateTime(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*MEAS_SCAN_END_TIME'))timeEnd=parseDateTime(line.match(/"([^"]+)"/)?.[1]);
+    if(line.includes('*RAS_INT_START')){inData=true;continue;}
+    if(line.includes('*RAS_INT_END')){break;}
+    if(inData&&line.trim()){const p=line.trim().split(/\s+/);if(p.length>=2){tth.push(parseFloat(p[0]));intensity.push(parseFloat(p[1]));}}
+  }
+  if(!tth.length)return null;
+  const maxI=Math.max(...intensity);
+  const maxIdx=intensity.indexOf(maxI);
+  return{id:Date.now()+Math.random(),name:fname.replace('.ras',''),visible:true,
+    scans:[{name:'scan 1',tth,intensity,visible:true,color:'#378ADD',maxI,peakPos:tth[maxIdx].toFixed(2)}],
+    tempStart,tempEnd,timeStart,timeEnd,scanRate:null,rampStartTemp:null};
+}
+
+function parseTxt(text,fname){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(!lines.length)return null;
+  const firstCols=lines[0].split(/\s+/).length;
+  const nScans=firstCols-1;
+  if(nScans<1)return null;
+  const tthArr=[];
+  const intensityArrs=Array.from({length:nScans},()=>[]);
+  for(const line of lines){
+    const p=line.trim().split(/\s+/);
+    if(p.length<2)continue;
+    tthArr.push(parseFloat(p[0]));
+    for(let i=0;i<nScans;i++)intensityArrs[i].push(parseFloat(p[i+1])||0);
+  }
+  const baseName=fname.replace(/\.[^.]+$/,'');
+  const scans=intensityArrs.map((intensity,i)=>{
+    const maxI=Math.max(...intensity);
+    const maxIdx=intensity.indexOf(maxI);
+    return{name:`scan ${i+1}`,tth:tthArr,intensity,visible:true,color:'#000',maxI,peakPos:tthArr[maxIdx]?.toFixed(2)??'-'};
+  });
+  return{id:Date.now()+Math.random(),name:baseName,visible:true,scans,
+    tempStart:null,tempEnd:null,timeStart:null,timeEnd:null,scanRate:null,rampStartTemp:null};
+}
+
+// ── render dataset panel
+function renderAll(){renderPanel();redraw();}
+
+function renderPanel(){
+  const el=document.getElementById('datasetPanel');
+  el.innerHTML='';
+  if(!datasets.length)return;
+  datasets.forEach((ds,di)=>{
+    const block=document.createElement('div');
+    block.className='dataset-block';
+
+    // Header
+    const hdr=document.createElement('div');
+    hdr.className='dataset-header';
+    hdr.innerHTML=`
+      <input class="dataset-name-input" value="${esc(ds.name)}" oninput="datasets[${di}].name=this.value;redraw()" title="Click to rename">
+      <span class="dataset-meta">${ds.scans.length} scan${ds.scans.length!==1?'s':''}</span>
+      <button class="eye-btn${ds.visible?'':' off'}" onclick="toggleDs(${di})" title="Show/hide all scans">👁</button>
+      <button class="remove-btn" onclick="removeDs(${di})" title="Remove dataset">×</button>`;
+    block.appendChild(hdr);
+
+    // Scan rows
+    const scanList=document.createElement('div');
+    scanList.className='scan-list';
+    ds.scans.forEach((sc,si)=>{
+      const row=document.createElement('div');
+      row.className='scan-row';
+      row.style.opacity=sc.visible?'1':'0.4';
+      row.draggable=true;
+      row.addEventListener('dragstart',e=>{dragSrc={di,si};e.dataTransfer.effectAllowed='move';setTimeout(()=>row.classList.add('dragging'),0);});
+      row.addEventListener('dragover',e=>{e.preventDefault();row.classList.add('drag-over-scan');});
+      row.addEventListener('dragleave',()=>row.classList.remove('drag-over-scan'));
+      row.addEventListener('drop',e=>{
+        e.preventDefault();row.classList.remove('drag-over-scan');row.classList.remove('dragging');
+        if(!dragSrc||dragSrc.di!==di||dragSrc.si===si)return;
+        const moved=ds.scans.splice(dragSrc.si,1)[0];
+        ds.scans.splice(si,0,moved);dragSrc=null;renderAll();
+      });
+      row.addEventListener('dragend',()=>{document.querySelectorAll('.scan-row').forEach(r=>{r.classList.remove('dragging');r.classList.remove('drag-over-scan');});dragSrc=null;});
+      row.innerHTML=`
+        <span class="drag-handle">⠿</span>
+        <div class="color-swatch" style="background:${sc.color}"></div>
+        <input class="scan-name-input" value="${esc(sc.name)}" oninput="datasets[${di}].scans[${si}].name=this.value;redraw()" title="Click to rename">
+        <span class="scan-meta">peak ${sc.peakPos}°</span>
+        <button class="eye-btn${sc.visible?'':' off'}" onclick="toggleScan(${di},${si})" title="Show/hide">👁</button>
+        <button class="remove-btn" onclick="removeScan(${di},${si})" title="Remove">×</button>`;
+      scanList.appendChild(row);
+    });
+    block.appendChild(scanList);
+    el.appendChild(block);
+  });
+}
+
+function esc(s){return String(s).replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+function toggleDs(di){datasets[di].visible=!datasets[di].visible;datasets[di].scans.forEach(s=>s.visible=datasets[di].visible);renderAll();}
+function toggleScan(di,si){datasets[di].scans[si].visible=!datasets[di].scans[si].visible;renderAll();}
+function removeDs(di){datasets.splice(di,1);renderAll();}
+function removeScan(di,si){datasets[di].scans.splice(si,1);if(!datasets[di].scans.length)datasets.splice(di,1);renderAll();}
+
+function setMode(m){
+  mode=m;
+  document.querySelectorAll('#segMode button').forEach((b,i)=>b.classList.toggle('active',['overlay','stack','split-lr','split-tb'][i]===m));
+  document.getElementById('offsetLabel').style.display=m==='stack'?'none':'inline';
+  document.getElementById('offsetInput').style.display=m==='stack'?'none':'inline';
+  redraw();
+}
+
+function resetRange(){
+  if(datasets.length&&datasets[0].scans.length){
+    const t=datasets[0].scans[0].tth;
+    document.getElementById('xMin').value=Math.floor(t[0]*10)/10;
+    document.getElementById('xMax').value=Math.ceil(t[t.length-1]*10)/10;
+  }
+  redraw();
+}
+
+// ── get all visible scans (flat list across all datasets)
+function getVisScans(){
+  return datasets.flatMap(ds=>ds.visible?ds.scans.filter(s=>s.visible):[]);
+}
+
+function buildDatasets(scans){
+  const xMin=parseFloat(document.getElementById('xMin').value);
+  const xMax=parseFloat(document.getElementById('xMax').value);
+  const offsetPct=parseFloat(document.getElementById('offsetInput').value)||0;
+  const maxAll=scans.length?Math.max(...scans.map(s=>s.maxI)):1;
+  if(mode==='stack'){
+    let cum=0;
+    return scans.map(sc=>{
+      const pts=sc.tth.map((x,j)=>({x,y:sc.intensity[j]+cum})).filter(p=>p.x>=xMin&&p.x<=xMax);
+      cum+=sc.maxI*1.2;
+      return{label:sc.name,data:pts,borderColor:sc.color,borderWidth:1.2,pointRadius:0,fill:false,tension:0};
+    });
+  } else {
+    return scans.map((sc,i)=>{
+      const pts=sc.tth.map((x,j)=>({x,y:sc.intensity[j]+i*(maxAll*offsetPct/100)})).filter(p=>p.x>=xMin&&p.x<=xMax);
+      return{label:sc.name,data:pts,borderColor:sc.color,borderWidth:1.2,pointRadius:0,fill:false,tension:0};
+    });
+  }
+}
+
+function makeConfig(datasets,aspect){
+  const xMin=parseFloat(document.getElementById('xMin').value);
+  const xMax=parseFloat(document.getElementById('xMax').value);
+  return{type:'line',data:{datasets},options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:true,aspectRatio:aspect,
+    plugins:{legend:{display:true,position:'right',labels:{boxWidth:10,font:{size:10},padding:6}},
+      tooltip:{callbacks:{label:d=>`${d.dataset.label}: ${Math.round(d.parsed.y)} cps`}}},
+    scales:{x:{type:'linear',title:{display:true,text:'2θ (°)',font:{size:11}},min:xMin,max:xMax,ticks:{maxTicksLimit:10,font:{size:10}}},
+      y:{title:{display:true,text:'Intensity (cps)',font:{size:11}},ticks:{font:{size:10}}}}}};
+}
+
+function redraw(){
+  charts.forEach(c=>c.destroy());charts=[];
+  const area=document.getElementById('chartArea');
+  const empty=document.getElementById('emptyState');
+  area.innerHTML='';
+  const vis=getVisScans();
+  if(!vis.length){empty.style.display='block';return;}
+  empty.style.display='none';
+
+  if(mode==='overlay'||mode==='stack'){
+    const canvas=document.createElement('canvas');
+    area.appendChild(canvas);
+    const aspect=mode==='stack'?Math.max(1.5,vis.length*0.25+1):2.2;
+    charts.push(new Chart(canvas.getContext('2d'),makeConfig(buildDatasets(vis),aspect)));
+  } else {
+    const isLR=mode==='split-lr';
+    // split: each dataset gets its own panel
+    const grid=document.createElement('div');
+    grid.className='split-grid';
+    grid.style.gridTemplateColumns=isLR?'repeat(auto-fit,minmax(300px,1fr))':'1fr';
+    area.appendChild(grid);
+    datasets.forEach(ds=>{
+      if(!ds.visible)return;
+      const scans=ds.scans.filter(s=>s.visible);
+      if(!scans.length)return;
+      const wrap=document.createElement('div');
+      wrap.style.cssText='border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);overflow:hidden';
+      const ttl=document.createElement('div');
+      ttl.style.cssText='font-size:11px;font-weight:500;color:var(--color-text-secondary);padding:5px 10px;border-bottom:0.5px solid var(--color-border-tertiary)';
+      ttl.textContent=`${ds.name} (${scans.length} scan${scans.length!==1?'s':''})`;
+      const canvas=document.createElement('canvas');
+      wrap.appendChild(ttl);wrap.appendChild(canvas);grid.appendChild(wrap);
+      charts.push(new Chart(canvas.getContext('2d'),makeConfig(buildDatasets(scans),isLR?1.6:2.2)));
+    });
+  }
+}
+
+// ── export
+function getMainCanvas(){return document.querySelector('#chartArea canvas');}
+
+function exportPNG(){
+  const c=getMainCanvas();if(!c)return;
+  const a=document.createElement('a');
+  a.download='xrd_pattern.png';
+  a.href=c.toDataURL('image/png',1.0);
+  a.click();
+}
+
+function exportSVG(){
+  // Chart.js doesn't natively export SVG; we'll export as high-res PNG with .svg wrapper note
+  // Instead, serialize chart data to a proper SVG via inline drawing
+  const c=getMainCanvas();if(!c)return;
+  const w=c.width,h=c.height;
+  const dataURL=c.toDataURL('image/png',1.0);
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${w}" height="${h}"><image href="${dataURL}" width="${w}" height="${h}"/></svg>`;
+  const blob=new Blob([svg],{type:'image/svg+xml'});
+  const a=document.createElement('a');
+  a.download='xrd_pattern.svg';
+  a.href=URL.createObjectURL(blob);
+  a.click();
+}
+
+function exportPDF(){
+  const c=getMainCanvas();if(!c)return;
+  const {jsPDF}=window.jspdf;
+  const imgData=c.toDataURL('image/png',1.0);
+  const pw=297,ph=210; // A4 landscape mm
+  const cw=c.width,ch=c.height;
+  const scale=Math.min((pw-20)/cw,(ph-20)/ch);
+  const iw=cw*scale,ih=ch*scale;
+  const ox=(pw-iw)/2,oy=(ph-ih)/2;
+  const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+  pdf.addImage(imgData,'PNG',ox,oy,iw,ih);
+  pdf.save('xrd_pattern.pdf');
+}
+</script>

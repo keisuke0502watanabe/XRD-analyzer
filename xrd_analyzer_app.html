@@ -1,0 +1,223 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+#app{padding:1rem 0}
+h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;gap:12px;flex-wrap:wrap}
+.title{font-size:18px;font-weight:500;color:var(--color-text-primary)}
+.subtitle{font-size:13px;color:var(--color-text-secondary);margin-top:2px}
+.drop-zone{border:1.5px dashed var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:2rem;text-align:center;cursor:pointer;transition:background 0.15s;margin-bottom:1.5rem}
+.drop-zone:hover,.drop-zone.drag-over{background:var(--color-background-secondary)}
+.drop-zone p{font-size:14px;color:var(--color-text-secondary);margin-top:8px}
+.drop-icon{font-size:24px}
+.controls{display:flex;align-items:center;gap:12px;margin-bottom:1rem;flex-wrap:wrap}
+.mode-btn{font-size:13px;padding:5px 14px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer;transition:all 0.15s}
+.mode-btn.active{background:var(--color-background-secondary);color:var(--color-text-primary);border-color:var(--color-border-primary)}
+.offset-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--color-text-secondary)}
+#offsetVal{font-size:13px;font-weight:500;color:var(--color-text-primary);min-width:28px}
+.sample-list{display:flex;flex-direction:column;gap:6px;margin-bottom:1rem}
+.sample-item{display:flex;align-items:center;gap:10px;padding:7px 12px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);background:var(--color-background-primary);font-size:13px}
+.color-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.sample-name{flex:1;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sample-meta{font-size:11px;color:var(--color-text-secondary);white-space:nowrap}
+.remove-btn{font-size:16px;line-height:1;color:var(--color-text-secondary);cursor:pointer;border:none;background:none;padding:0 2px;opacity:0.6}
+.remove-btn:hover{opacity:1}
+.chart-wrap{position:relative;width:100%;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
+canvas{display:block;width:100%}
+.empty-state{padding:3rem;text-align:center;color:var(--color-text-secondary);font-size:14px}
+.range-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:1rem}
+.range-label{font-size:12px;color:var(--color-text-secondary)}
+.range-input{width:70px;font-size:12px;padding:4px 8px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary)}
+.btn-small{font-size:12px;padding:4px 12px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
+.btn-small:hover{background:var(--color-background-secondary)}
+</style>
+
+<div id="app">
+<h2 class="sr-only">XRD pattern viewer — upload .ras files to visualize and compare diffraction patterns</h2>
+
+<div class="header">
+  <div>
+    <div class="title">XRD Pattern Viewer</div>
+    <div class="subtitle">Rigaku .ras format — drag &amp; drop to compare samples</div>
+  </div>
+</div>
+
+<div class="drop-zone" id="dropZone">
+  <div class="drop-icon">+</div>
+  <p>Drag &amp; drop .ras files here, or click to select</p>
+  <input type="file" id="fileInput" accept=".ras" multiple style="display:none">
+</div>
+
+<div id="sampleList" class="sample-list"></div>
+
+<div id="chartControls" style="display:none">
+  <div class="controls">
+    <button class="mode-btn active" id="btnOverlay" onclick="setMode('overlay')">Overlay</button>
+    <button class="mode-btn" id="btnStack" onclick="setMode('stack')">Stack</button>
+    <div class="offset-row" id="offsetRow">
+      <label for="offsetSlider" style="font-size:13px">Offset</label>
+      <input type="range" id="offsetSlider" min="0" max="200" value="30" step="1" style="width:100px" oninput="updateOffset(this.value)">
+      <span id="offsetVal">30%</span>
+    </div>
+  </div>
+  <div class="range-row">
+    <span class="range-label">2θ range:</span>
+    <input class="range-input" type="number" id="xMin" value="2" step="0.5" onchange="redraw()">
+    <span class="range-label">–</span>
+    <input class="range-input" type="number" id="xMax" value="32" step="0.5" onchange="redraw()">
+    <span class="range-label">°</span>
+    <button class="btn-small" onclick="resetRange()">Reset</button>
+  </div>
+</div>
+
+<div class="chart-wrap" id="chartWrap">
+  <div class="empty-state" id="emptyState">No data loaded — upload .ras files above</div>
+  <canvas id="myChart" style="display:none"></canvas>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const COLORS=['#378ADD','#1D9E75','#D85A30','#7F77DD','#D4537E','#639922','#BA7517','#E24B4A'];
+let samples=[];
+let chart=null;
+let mode='overlay';
+let offsetPct=30;
+
+const dropZone=document.getElementById('dropZone');
+const fileInput=document.getElementById('fileInput');
+
+dropZone.onclick=()=>fileInput.click();
+dropZone.ondragover=e=>{e.preventDefault();dropZone.classList.add('drag-over')};
+dropZone.ondragleave=()=>dropZone.classList.remove('drag-over');
+dropZone.ondrop=e=>{e.preventDefault();dropZone.classList.remove('drag-over');handleFiles(e.dataTransfer.files)};
+fileInput.onchange=e=>handleFiles(e.target.files);
+
+function handleFiles(files){
+  [...files].forEach(f=>{
+    if(!f.name.endsWith('.ras'))return;
+    const r=new FileReader();
+    r.onload=ev=>{
+      const parsed=parseRas(ev.target.result,f.name);
+      if(parsed){samples.push(parsed);renderList();redraw();}
+    };
+    r.readAsText(f,'latin1');
+  });
+}
+
+function parseRas(text,fname){
+  const lines=text.split(/\r?\n/);
+  let inData=false;
+  const tth=[],intensity=[];
+  for(const line of lines){
+    if(line.includes('*RAS_INT_START')){inData=true;continue;}
+    if(line.includes('*RAS_INT_END')){break;}
+    if(inData&&line.trim()){
+      const p=line.trim().split(/\s+/);
+      if(p.length>=2){tth.push(parseFloat(p[0]));intensity.push(parseFloat(p[1]));}
+    }
+  }
+  if(!tth.length)return null;
+  const maxI=Math.max(...intensity);
+  const maxIdx=intensity.indexOf(maxI);
+  return{name:fname.replace('.ras',''),tth,intensity,maxI,peakPos:tth[maxIdx].toFixed(2),color:COLORS[samples.length%COLORS.length]};
+}
+
+function removeSample(i){
+  samples.splice(i,1);
+  renderList();redraw();
+}
+
+function renderList(){
+  const el=document.getElementById('sampleList');
+  el.innerHTML='';
+  samples.forEach((s,i)=>{
+    const div=document.createElement('div');
+    div.className='sample-item';
+    div.innerHTML=`<div class="color-dot" style="background:${s.color}"></div>
+      <span class="sample-name">${s.name}</span>
+      <span class="sample-meta">peak ${s.peakPos}° | max ${Math.round(s.maxI)} cps</span>
+      <button class="remove-btn" onclick="removeSample(${i})">×</button>`;
+    el.appendChild(div);
+  });
+  document.getElementById('chartControls').style.display=samples.length?'block':'none';
+}
+
+function setMode(m){
+  mode=m;
+  document.getElementById('btnOverlay').classList.toggle('active',m==='overlay');
+  document.getElementById('btnStack').classList.toggle('active',m==='stack');
+  document.getElementById('offsetRow').style.display=m==='overlay'?'flex':'none';
+  redraw();
+}
+
+function updateOffset(v){
+  offsetPct=parseInt(v);
+  document.getElementById('offsetVal').textContent=v+'%';
+  redraw();
+}
+
+function resetRange(){
+  document.getElementById('xMin').value=2;
+  document.getElementById('xMax').value=32;
+  redraw();
+}
+
+function redraw(){
+  const canvas=document.getElementById('myChart');
+  const empty=document.getElementById('emptyState');
+  if(!samples.length){
+    canvas.style.display='none';
+    empty.style.display='block';
+    if(chart){chart.destroy();chart=null;}
+    return;
+  }
+  canvas.style.display='block';
+  empty.style.display='none';
+
+  const xMin=parseFloat(document.getElementById('xMin').value)||2;
+  const xMax=parseFloat(document.getElementById('xMax').value)||32;
+
+  const datasets=[];
+  if(mode==='overlay'){
+    const maxAll=Math.max(...samples.map(s=>s.maxI));
+    samples.forEach((s,i)=>{
+      const pts=s.tth.map((x,j)=>({x,y:s.intensity[j]+i*(maxAll*offsetPct/100)})).filter(p=>p.x>=xMin&&p.x<=xMax);
+      datasets.push({label:s.name,data:pts,borderColor:s.color,borderWidth:1.2,pointRadius:0,fill:false,tension:0});
+    });
+  } else {
+    const chartH=Math.max(200,samples.length*120);
+    canvas.style.height=chartH+'px';
+    const slotH=samples.map(s=>s.maxI);
+    let cumOffset=0;
+    samples.forEach((s,i)=>{
+      const pts=s.tth.map((x,j)=>({x,y:s.intensity[j]+cumOffset})).filter(p=>p.x>=xMin&&p.x<=xMax);
+      cumOffset+=slotH[i]*1.15;
+      datasets.push({label:s.name,data:pts,borderColor:s.color,borderWidth:1.2,pointRadius:0,fill:false,tension:0});
+    });
+  }
+
+  if(chart){chart.destroy();}
+  const ctx=canvas.getContext('2d');
+  chart=new Chart(ctx,{
+    type:'line',
+    data:{datasets},
+    options:{
+      animation:false,
+      parsing:false,
+      responsive:true,
+      maintainAspectRatio:mode==='overlay',
+      aspectRatio:2.2,
+      plugins:{
+        legend:{display:true,position:'top',labels:{boxWidth:10,font:{size:11},padding:12}},
+        tooltip:{callbacks:{label:d=>`${d.dataset.label}: ${Math.round(d.parsed.y)} cps`}}
+      },
+      scales:{
+        x:{type:'linear',title:{display:true,text:'2θ (degrees)',font:{size:12}},min:xMin,max:xMax,ticks:{maxTicksLimit:10,font:{size:11}}},
+        y:{title:{display:true,text:'Intensity (cps)',font:{size:12}},ticks:{font:{size:11}}}
+      }
+    }
+  });
+}
+</script>
