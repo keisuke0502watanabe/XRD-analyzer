@@ -1,58 +1,5 @@
 
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:var(--font-sans)}
-#app{padding:1rem 0}
-h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
-.drop-zone{border:1.5px dashed var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:1.1rem;text-align:center;cursor:pointer;transition:background 0.15s;margin-bottom:1rem}
-.drop-zone:hover,.drop-zone.drag-over{background:var(--color-background-secondary)}
-.drop-zone p{font-size:12px;color:var(--color-text-secondary);margin-top:4px}
-.sample-list{display:flex;flex-direction:column;gap:4px;margin-bottom:1rem}
-.sample-item{border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);background:var(--color-background-primary);font-size:12px;transition:opacity 0.2s}
-.sample-item.dragging{opacity:0.4}
-.sample-item.drag-over-item{border-color:var(--color-border-primary);background:var(--color-background-secondary)}
-.sample-row{display:flex;align-items:center;gap:7px;padding:5px 10px;cursor:grab;user-select:none}
-.ramp-row{display:flex;align-items:center;gap:6px;padding:3px 10px 6px 28px;flex-wrap:wrap;border-top:0.5px solid var(--color-border-tertiary)}
-.drag-handle{font-size:13px;color:var(--color-text-secondary);opacity:0.4;cursor:grab;padding:0 2px;line-height:1}
-.color-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
-.sample-name{flex:1;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sample-meta{font-size:11px;color:var(--color-text-secondary);white-space:nowrap}
-.eye-btn{font-size:12px;border:none;background:none;cursor:pointer;padding:0 2px;line-height:1;color:var(--color-text-primary);opacity:0.5}
-.eye-btn:hover{opacity:1}
-.eye-btn.off{opacity:0.15}
-.remove-btn{font-size:14px;line-height:1;color:var(--color-text-secondary);cursor:pointer;border:none;background:none;padding:0 2px;opacity:0.35}
-.remove-btn:hover{opacity:1}
-.num-sm{width:58px;font-size:11px;padding:2px 5px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);text-align:right}
-.ctrl-lbl{font-size:11px;color:var(--color-text-secondary)}
-.view-toggle{display:flex;gap:6px;margin-bottom:1rem;align-items:center;flex-wrap:wrap}
-.seg{display:flex;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);overflow:hidden}
-.seg button{font-size:12px;padding:4px 11px;border:none;background:transparent;color:var(--color-text-secondary);cursor:pointer;border-right:0.5px solid var(--color-border-secondary)}
-.seg button:last-child{border-right:none}
-.seg button.active{background:var(--color-background-secondary);color:var(--color-text-primary)}
-.panel-order-row{display:flex;align-items:center;gap:8px;margin-bottom:1rem;flex-wrap:wrap}
-.swap-btn{font-size:12px;padding:4px 12px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
-.swap-btn:hover{background:var(--color-background-secondary)}
-.main-layout{display:flex;flex-direction:column;gap:8px}
-.main-layout.side-by-side{flex-direction:row}
-.panel-box{flex:1;min-width:0;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden;background:var(--color-background-primary)}
-.panel-header{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:0.5px solid var(--color-border-tertiary);flex-wrap:wrap;gap:6px}
-.panel-title{font-size:12px;font-weight:500;color:var(--color-text-secondary)}
-.panel-body{padding:8px 10px}
-.ctrl-row{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.mini-seg{display:flex;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);overflow:hidden}
-.mini-seg button{font-size:11px;padding:3px 9px;border:none;background:transparent;color:var(--color-text-secondary);cursor:pointer;border-right:0.5px solid var(--color-border-secondary)}
-.mini-seg button:last-child{border-right:none}
-.mini-seg button.active{background:var(--color-background-secondary);color:var(--color-text-primary)}
-.num-input{width:55px;font-size:11px;padding:2px 5px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);text-align:right}
-.btn-xs{font-size:11px;padding:2px 8px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);cursor:pointer}
-.btn-xs:hover{background:var(--color-background-secondary)}
-.empty-state{padding:2rem;text-align:center;color:var(--color-text-secondary);font-size:12px}
-canvas{display:block;width:100%}
-.legend-hint{font-size:11px;color:var(--color-text-secondary);padding:4px 10px 6px;display:flex;align-items:center;gap:12px}
-.legend-hint span{display:flex;align-items:center;gap:5px}
-.line-thick{display:inline-block;width:22px;height:3px;background:var(--color-text-secondary);border-radius:2px}
-.line-thin{display:inline-block;width:22px;height:1.5px;background:var(--color-text-secondary);border-radius:2px}
-</style>
+<link rel="stylesheet" href="./shared/xrd_thermal_common.css">
 
 <div id="app">
 <h2 class="sr-only">XRD pattern viewer with thermal history and ramp segments</h2>
@@ -137,6 +84,7 @@ canvas{display:block;width:100%}
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="./shared/xrd_thermal_common.js"></script>
 <script>
 const COLORS=['#378ADD','#1D9E75','#D85A30','#7F77DD','#D4537E','#639922','#BA7517','#E24B4A'];
 let samples=[];
@@ -148,24 +96,11 @@ let timeUnit='sec';
 let panelOrder=['xrd','thermal'];
 let dragSrcIdx=null;
 
-// Natural sort: splits string into text/number chunks and compares
-function naturalKey(str){
-  return str.split(/(\d+)/).map((s,i)=>i%2===0?s.toLowerCase():parseInt(s,10));
-}
-function naturalCompare(a,b){
-  const ka=naturalKey(a.name),kb=naturalKey(b.name);
-  for(let i=0;i<Math.max(ka.length,kb.length);i++){
-    const ai=ka[i]??'',bi=kb[i]??'';
-    if(ai<bi)return -1;
-    if(ai>bi)return 1;
-  }
-  return 0;
-}
 function insertSorted(s){
   // find insertion index using natural sort
   let idx=samples.length;
   for(let i=0;i<samples.length;i++){
-    if(naturalCompare(s,samples[i])<0){idx=i;break;}
+    if(XrdThermalCommon.naturalCompareByName(s,samples[i])<0){idx=i;break;}
   }
   samples.splice(idx,0,s);
 }
@@ -179,65 +114,14 @@ dropZone.ondrop=e=>{e.preventDefault();dropZone.classList.remove('drag-over');ha
 fileInput.onchange=e=>handleFiles(e.target.files);
 
 function handleFiles(files){
-  // Sort incoming files by natural order before processing
-  const sorted=[...files].filter(f=>f.name.endsWith('.ras'))
-    .sort((a,b)=>{
-      const ka=naturalKey(a.name),kb=naturalKey(b.name);
-      for(let i=0;i<Math.max(ka.length,kb.length);i++){
-        const ai=ka[i]??'',bi=kb[i]??'';
-        if(ai<bi)return -1;if(ai>bi)return 1;
-      }
-      return 0;
-    });
-  let pending=sorted.length;
-  const parsed=new Array(sorted.length);
-  sorted.forEach((f,fi)=>{
-    const r=new FileReader();
-    r.onload=ev=>{
-      const p=parseRas(ev.target.result,f.name);
-      if(p){p.visible=true;p.group='A';p.scanRate=null;p.rampStartTemp=null;parsed[fi]=p;}
-      if(--pending===0){
-        // Insert all at once in natural order
-        parsed.filter(Boolean).forEach(p=>insertSorted(p));
-        // Re-assign colors after sort
-        samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
-        renderAll();
-      }
-    };
-    r.readAsText(f,'latin1');
-  });
-}
-
-function parseDateTime(s){
-  if(!s)return null;
-  const m=s.match(/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+):(\d+)/);
-  if(!m)return null;
-  const[,mo,dd,yy,hh,mi,ss]=m;
-  return new Date(`20${yy}-${mo.padStart(2,'0')}-${dd.padStart(2,'0')}T${hh}:${mi}:${ss}`);
-}
-
-function parseRas(text,fname){
-  const lines=text.split(/\r?\n/);
-  let inData=false;
-  const tth=[],intensity=[];
-  let tempStart=null,tempEnd=null,timeStart=null,timeEnd=null;
-  for(const line of lines){
-    if(line.includes('*ATMOSPHERE_TEMP_START'))tempStart=parseFloat(line.match(/"([^"]+)"/)?.[1]);
-    if(line.includes('*ATMOSPHERE_TEMP_END'))tempEnd=parseFloat(line.match(/"([^"]+)"/)?.[1]);
-    if(line.includes('*MEAS_SCAN_START_TIME'))timeStart=parseDateTime(line.match(/"([^"]+)"/)?.[1]);
-    if(line.includes('*MEAS_SCAN_END_TIME'))timeEnd=parseDateTime(line.match(/"([^"]+)"/)?.[1]);
-    if(line.includes('*RAS_INT_START')){inData=true;continue;}
-    if(line.includes('*RAS_INT_END')){break;}
-    if(inData&&line.trim()){
-      const p=line.trim().split(/\s+/);
-      if(p.length>=2){tth.push(parseFloat(p[0]));intensity.push(parseFloat(p[1]));}
+  XrdThermalCommon.loadRasFiles(files,{
+    sortNatural:true,
+    onComplete:parsed=>{
+      parsed.forEach(p=>insertSorted(p));
+      samples.forEach((s,i)=>{s.color=COLORS[i%COLORS.length];});
+      renderAll();
     }
-  }
-  if(!tth.length)return null;
-  const maxI=Math.max(...intensity);
-  const maxIdx=intensity.indexOf(maxI);
-  return{name:fname.replace('.ras',''),tth,intensity,maxI,peakPos:tth[maxIdx].toFixed(2),
-    color:'#000',tempStart,tempEnd,timeStart,timeEnd};
+  });
 }
 
 function toggleVisible(i){samples[i].visible=!samples[i].visible;renderAll();}
@@ -418,7 +302,13 @@ function redrawThermal(){
   if(layout==='xrd')return;
   const canvas=document.getElementById('thermalChart');
   const empty=document.getElementById('thermalEmpty');
-  const valid=samples.filter(s=>s.visible&&s.timeStart&&s.timeEnd&&s.tempStart!=null);
+  const valid=samples.filter(s=>{
+    if(!s.visible)return false;
+    if(!(s.timeStart instanceof Date)||!(s.timeEnd instanceof Date))return false;
+    if(isNaN(s.timeStart.getTime())||isNaN(s.timeEnd.getTime()))return false;
+    if(s.timeEnd.getTime()<=s.timeStart.getTime())return false;
+    return Number.isFinite(s.tempStart)&&Number.isFinite(s.tempEnd);
+  });
   if(!valid.length){
     canvas.style.display='none';empty.style.display='block';
     if(thermalChart){thermalChart.destroy();thermalChart=null;}
@@ -458,6 +348,10 @@ function redrawThermal(){
     }
   });
 
+  let yLo=Infinity,yHi=-Infinity;
+  datasets.forEach(ds=>{(ds.data||[]).forEach(p=>{if(p&&Number.isFinite(p.y)){yLo=Math.min(yLo,p.y);yHi=Math.max(yHi,p.y);}});});
+  const yPad=Number.isFinite(yLo)&&Number.isFinite(yHi)?Math.max(0.5,(yHi-yLo)*0.12,1):1;
+
   const tAspect=layout==='lr'?1.3:2.1;
   const uLabel=timeUnit==='sec'?'Time (sec)':timeUnit==='min'?'Time (min)':'Time (hour)';
   if(thermalChart)thermalChart.destroy();
@@ -483,7 +377,8 @@ function redrawThermal(){
         }}}},
       scales:{
         x:{type:'linear',title:{display:true,text:uLabel,font:{size:10}},ticks:{font:{size:10}},grid:{color:'var(--color-border-tertiary)'}},
-        y:{title:{display:true,text:'Temperature (°C)',font:{size:10}},ticks:{font:{size:10}},grid:{color:'var(--color-border-tertiary)'}}
+        y:{title:{display:true,text:'Temperature (°C)',font:{size:10}},ticks:{font:{size:10}},grid:{color:'var(--color-border-tertiary)'},
+          suggestedMin:Number.isFinite(yLo)?yLo-yPad:undefined,suggestedMax:Number.isFinite(yHi)?yHi+yPad:undefined}
       }}});
 }
 </script>
