@@ -649,18 +649,78 @@ function naturalCompare(a,b){
   for(let i=0;i<Math.max(ka.length,kb.length);i++){const ai=ka[i]??'',bi=kb[i]??'';if(ai<bi)return-1;if(ai>bi)return 1;}
   return 0;
 }
-/** Rigaku SmartLab .ras: *MEAS_SCAN_*_TIME "MM/DD/YY HH:mm:ss" (2-digit yy: 00–69 → 20yy). */
+function naturalCompareSamples(a,b){
+  return naturalCompare({name:a.rawName||a.name||''},{name:b.rawName||b.name||''});
+}
+/** Rigaku SmartLab .ras: *MEAS_SCAN_*_TIME "MM/DD/YY HH:mm:ss"; also accepts ISO-like strings. */
 function parseDateTime(s){
   if(!s)return null;
-  const m=String(s).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})/);
-  if(!m)return null;
-  const mo=parseInt(m[1],10),dd=parseInt(m[2],10),yyStr=m[3];
-  const hh=parseInt(m[4],10),mi=parseInt(m[5],10),ss=parseInt(m[6],10);
-  const yy=parseInt(yyStr,10);
-  const year=yyStr.length===2&&!isNaN(yy)?(yy<=69?2000+yy:1900+yy):yy;
-  if(!Number.isFinite(year)||!Number.isFinite(mo)||!Number.isFinite(dd)||mo<1||mo>12||dd<1||dd>31)return null;
-  const d=new Date(year,mo-1,dd,hh,mi,ss);
-  return isNaN(d.getTime())?null:d;
+  const t=String(s).trim();
+  const m=t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})/);
+  if(m){
+    const mo=parseInt(m[1],10),dd=parseInt(m[2],10),yyStr=m[3];
+    const hh=parseInt(m[4],10),mi=parseInt(m[5],10),ss=parseInt(m[6],10);
+    const yy=parseInt(yyStr,10);
+    const year=yyStr.length===2&&!isNaN(yy)?(yy<=69?2000+yy:1900+yy):yy;
+    if(!Number.isFinite(year)||!Number.isFinite(mo)||!Number.isFinite(dd)||mo<1||mo>12||dd<1||dd>31)return null;
+    const d=new Date(year,mo-1,dd,hh,mi,ss);
+    return isNaN(d.getTime())?null:d;
+  }
+  const iso=new Date(t);
+  return isNaN(iso.getTime())?null:iso;
+}
+/** Estimate scan length (seconds) for thermal window when end time is missing or invalid. */
+function estimateScanDurationSec(opts,nPoints){
+  const n=Math.max(1,nPoints||1);
+  const ct=Number.isFinite(opts.countingTime)?opts.countingTime:null;
+  if(ct!=null&&ct>0)return ct*n;
+  const tps=Number.isFinite(opts.timePerStep)?opts.timePerStep:null;
+  if(tps!=null&&tps>0)return tps*n;
+  const sp=Number.isFinite(opts.scanSpeed)?opts.scanSpeed:null;
+  const ss=Number.isFinite(opts.scanStart)?opts.scanStart:null;
+  const se=Number.isFinite(opts.scanStop)?opts.scanStop:null;
+  if(sp!=null&&sp>0&&ss!=null&&se!=null){
+    const range=Math.abs(se-ss);
+    const unit=String(opts.scanSpeedUnit||'').toLowerCase();
+    if(unit.includes('min'))return(Math.max(range/sp,0.01))*60;
+    return Math.max(range/sp,1);
+  }
+  return Math.max(60,n);
+}
+function normalizeMeasurementWindow(timeStart,timeEnd,opts,nPoints){
+  let t0=timeStart instanceof Date&&!isNaN(timeStart.getTime())?timeStart:null;
+  let t1=timeEnd instanceof Date&&!isNaN(timeEnd.getTime())?timeEnd:null;
+  const durMs=estimateScanDurationSec(opts,nPoints)*1000;
+  if(t0&&!t1)t1=new Date(t0.getTime()+durMs);
+  else if(!t0&&t1)t0=new Date(t1.getTime()-durMs);
+  if(t0&&t1&&t1.getTime()<=t0.getTime())t1=new Date(t0.getTime()+durMs);
+  return{t0,t1};
+}
+/** Same thermal defaults for HDF5, RAS, XRDML, etc. */
+function applyThermalDefaultsToSample(s,fname,opts={}){
+  if(!s)return;
+  const fileTemps=resolveSampleTemps(fname,{
+    tempSetPoint:opts.tempSetPoint,tempStart:opts.tempStart,tempEnd:opts.tempEnd
+  });
+  if(s.thermalTempOverride==null){
+    if(fileTemps.tempSetPoint!=null)s.tempSetPoint=fileTemps.tempSetPoint;
+    if(fileTemps.tempStart!=null)s.tempStart=fileTemps.tempStart;
+    if(fileTemps.tempEnd!=null)s.tempEnd=fileTemps.tempEnd;
+    if(s.tempStart!=null&&s.tempEnd==null)s.tempEnd=s.tempStart;
+    if(s.tempSetPoint==null&&s.tempStart!=null)s.tempSetPoint=s.tempStart;
+  }
+  const meta=s.meta||{};
+  const win=normalizeMeasurementWindow(
+    s.thermalTimeStartOverride?new Date(s.thermalTimeStartOverride):(opts.timeStart??s.timeStart),
+    s.thermalTimeEndOverride?new Date(s.thermalTimeEndOverride):(opts.timeEnd??s.timeEnd),
+    {...meta,...opts,countingTime:opts.countingTime??meta.countingTime,timePerStep:opts.timePerStep??meta.timePerStep,
+      scanSpeed:opts.scanSpeed??meta.scanSpeed,scanSpeedUnit:opts.scanSpeedUnit??meta.scanSpeedUnit,
+      scanStart:opts.scanStart??meta.scanStart,scanStop:opts.scanStop??meta.scanStop},
+    s.tth?.length
+  );
+  if(!s.thermalTimeStartOverride&&win.t0)s.timeStart=win.t0;
+  if(!s.thermalTimeEndOverride&&win.t1)s.timeEnd=win.t1;
+  refreshSegmentsForSample(s);
 }
 /* parsers defined below */
 function ensureXrdControls(s){
@@ -668,7 +728,15 @@ function ensureXrdControls(s){
   if(!isFinite(s.intensityGainManual)||s.intensityGainManual<=0)s.intensityGainManual=1;
   if(s.xrdLegendLabel==null)s.xrdLegendLabel='';
 }
-function xrdDisplayLegend(s){return (s.xrdLegendLabel&&String(s.xrdLegendLabel).trim())?String(s.xrdLegendLabel).trim():s.name;}
+function defaultFileLegend(s){
+  if(!s)return'';
+  if(s.rawName!=null&&String(s.rawName).trim())return String(s.rawName).trim();
+  return s.name!=null?String(s.name).trim():'';
+}
+function xrdDisplayLegend(s){
+  if(s.xrdLegendLabel!=null&&String(s.xrdLegendLabel).trim())return String(s.xrdLegendLabel).trim();
+  return defaultFileLegend(s);
+}
 function xrdKey(s){return s?.sampleUid||s?.name||String(Math.random());}
 function outerKey(s,seg){return `${s?.sampleUid||s?.name||'sample'}::${seg?.segType||'seg'}::${seg?.label||''}::${seg?.idx??''}`;}
 function xrdVisibleSamples(){
@@ -716,30 +784,41 @@ function formatThermalXTick(v){
   const d=new Date(v);
   return isNaN(d.getTime())?'':d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
 }
-/** Connect flat-T measurement windows in series order (time on X, °C on Y). */
+const THERMAL_BRIDGE_COLOR='#94a3b8';
+/** Connect flat-T windows; marker colors match each sample's XRD color (s.color). */
 function buildSimpleThermalPolyline(sampleList){
   const effs=[];
   (sampleList||[]).forEach(s=>{
     if(s.visible===false)return;
     const e=getEffectiveThermal(s);
-    if(e)effs.push({t0:e.t0.getTime(),t1:e.t1.getTime(),T:e.T0});
+    if(e)effs.push({t0:e.t0.getTime(),t1:e.t1.getTime(),T:e.T0,color:s.color||'#4a9eff'});
   });
-  if(!effs.length)return[];
+  if(!effs.length)return{pts:[],pointColors:[]};
   const tRef=timeUnit==='date'?0:Math.min(...effs.map(e=>e.t0));
-  const pts=[],eps=1e-6;
+  const pts=[],pointColors=[],eps=1e-6;
   effs.forEach((e,i)=>{
+    const col=e.color;
     const x0=thermalToX(e.t0,tRef),x1=thermalToX(e.t1,tRef);
-    if(!pts.length){pts.push({x:x0,y:e.T});}
-    else{
+    if(!pts.length){
+      pts.push({x:x0,y:e.T});
+      pointColors.push(col);
+    }else{
       const prev=effs[i-1];
       const px=thermalToX(prev.t1,tRef);
       const last=pts[pts.length-1];
-      if(Math.abs(last.x-px)>eps||Math.abs(last.y-prev.T)>eps)pts.push({x:px,y:prev.T});
-      if(Math.abs(px-x0)>eps||Math.abs(prev.T-e.T)>eps)pts.push({x:x0,y:e.T});
+      if(Math.abs(last.x-px)>eps||Math.abs(last.y-prev.T)>eps){
+        pts.push({x:px,y:prev.T});
+        pointColors.push(THERMAL_BRIDGE_COLOR);
+      }
+      if(Math.abs(px-x0)>eps||Math.abs(prev.T-e.T)>eps){
+        pts.push({x:x0,y:e.T});
+        pointColors.push(THERMAL_BRIDGE_COLOR);
+      }
     }
     pts.push({x:x1,y:e.T});
+    pointColors.push(col);
   });
-  return pts;
+  return{pts,pointColors};
 }
 function buildThermalChartScales(yR={}){
   const x={type:'linear',title:{display:true,text:thermalXAxisTitle()}};
@@ -807,8 +886,10 @@ function parseRas(text,fname){
     }
   }
   if(!tth.length)return null;
+  if(tempEnd==null&&tempStart!=null)tempEnd=tempStart;
   const meta={
     timeStart,timeEnd,lambda,
+    tempStart,tempEnd,tempSetPoint:tempStart,
     voltage,current,waveType,
     scanSpeed,scanSpeedUnit,scanStep,scanStart,scanStop,scanMode,scanAxis,
     goniometerName,attachmentName,counterName,sampleHolder,
@@ -894,36 +975,97 @@ async function _ensureH5Wasm(){
   return _h5wasmReady;
 }
 
+function _h5FlattenScalar(val){
+  if(val==null||val==='')return null;
+  if(val instanceof Date)return val;
+  if(typeof val==='number'&&Number.isFinite(val))return val;
+  if(typeof val==='string')return val;
+  if(val instanceof Uint8Array)return val;
+  if(ArrayBuffer.isView(val))return new Uint8Array(val.buffer,val.byteOffset,val.byteLength);
+  if(Array.isArray(val)){
+    if(!val.length)return null;
+    if(val.length===1)return _h5FlattenScalar(val[0]);
+    if(val.every(x=>typeof x==='number'&&x>=0&&x<256))return val;
+    return _h5FlattenScalar(val[0]);
+  }
+  return val;
+}
 function _h5str(val){
-  /* h5wasm returns Uint8Array for fixed-length strings, or Array of Uint8Array */
-  if(!val)return null;
-  if(typeof val==='string')return val.trim();
-  const dec=v=>{try{return new TextDecoder().decode(v instanceof Uint8Array?v:new Uint8Array(v)).replace(/\0/g,'').trim();}catch(_e){return null;}};
-  if(val instanceof Uint8Array)return dec(val);
-  if(Array.isArray(val)&&val.length>0)return dec(val[0]);
-  return String(val).trim()||null;
+  const v=_h5FlattenScalar(val);
+  if(v==null)return null;
+  if(typeof v==='string')return v.replace(/\0/g,'').trim()||null;
+  const dec=bytes=>{
+    try{return new TextDecoder().decode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)).replace(/\0/g,'').trim()||null;}
+    catch(_e){return null;}
+  };
+  if(v instanceof Uint8Array)return dec(v);
+  if(Array.isArray(v)&&v.length&&typeof v[0]==='number')return dec(Uint8Array.from(v));
+  return String(v).replace(/\0/g,'').trim()||null;
 }
 function _h5num(val){
   if(val==null)return null;
-  const v=Array.isArray(val)?val[0]:val;
-  const n=typeof v==='number'?v:parseFloat(v);
+  const v=_h5FlattenScalar(val);
+  const n=typeof v==='number'?v:parseFloat(_h5str(v));
   return Number.isFinite(n)?n:null;
 }
+/** NeXus DATE_TIME, ISO strings, or unix seconds/ms from h5wasm. */
 function _h5date(val){
-  const s=_h5str(val);if(!s)return null;
-  try{
-    let d=new Date(s);
-    if(isNaN(d.getTime())&&/^\d{4}-\d{2}-\d{2}T/.test(s))d=new Date(s.replace(/(\.\d{3})\d+/,'$1'));
+  const raw=_h5FlattenScalar(val);
+  if(raw instanceof Date&&!isNaN(raw.getTime()))return raw;
+  if(typeof raw==='number'&&Number.isFinite(raw)){
+    const ms=raw>1e12?raw:(raw>1e9?raw*1000:raw);
+    const d=new Date(ms);
     return isNaN(d.getTime())?null:d;
-  }catch(_e){return null;}
+  }
+  const s=_h5str(val);
+  if(!s)return null;
+  let t=s.trim();
+  if(/^\d{4}-\d{2}-\d{2}T/.test(t)){
+    t=t.replace(/(\.\d{3})\d+/,'$1');
+    if(!/[zZ]|[+\-]\d{2}:\d{2}$/.test(t))t+='Z';
+  }
+  let d=new Date(t);
+  if(!isNaN(d.getTime()))return d;
+  d=new Date(t.replace(/(\.\d+)\d*([zZ]|$)/,'$1$2'));
+  return isNaN(d.getTime())?null:d;
+}
+/** Find start_time / end_time under NXentry (Anton Paar NeXus layout). */
+function h5ReadTimes(entry){
+  const tryPaths=(sp,ep)=>{const t0=_h5date(h5Rd(entry,sp));const t1=_h5date(h5Rd(entry,ep));return{t0,t1};};
+  let{t0,t1}=tryPaths('start_time','end_time');
+  if(t0||t1)return{t0,t1};
+  ({t0,t1}=tryPaths('measurement/start_time','measurement/end_time'));
+  if(t0||t1)return{t0,t1};
+  let f0=null,f1=null;
+  function walk(g){
+    let keys;try{keys=g.keys();}catch(_e){return;}
+    for(const k of keys){
+      try{
+        const item=g.get(k);
+        if(!item)continue;
+        const lk=String(k).toLowerCase();
+        if(item.type==='Dataset'){
+          if(lk==='start_time'&&!f0)f0=_h5date(item.value);
+          else if(lk==='end_time'&&!f1)f1=_h5date(item.value);
+        }else if(item.type==='Group')walk(item);
+      }catch(_e){}
+    }
+  }
+  walk(entry);
+  return{t0:f0,t1:f1};
+}
+function h5Rd(entry,path){
+  try{return entry.get(path)?.value??null;}catch(_e){return null;}
 }
 function ensureSampleThermal(s){
   if(!s)return;
-  const temps=resolveSampleTemps(s.rawName||s.name||'',{tempSetPoint:s.tempSetPoint,tempStart:s.tempStart,tempEnd:s.tempEnd});
-  if(s.tempSetPoint==null&&temps.tempSetPoint!=null)s.tempSetPoint=temps.tempSetPoint;
-  if(s.tempStart==null&&temps.tempStart!=null)s.tempStart=temps.tempStart;
-  if(s.tempEnd==null&&temps.tempEnd!=null)s.tempEnd=temps.tempEnd;
-  refreshSegmentsForSample(s);
+  const m=s.meta||{};
+  applyThermalDefaultsToSample(s,s.rawName||s.name||'',{
+    timeStart:s.timeStart,timeEnd:s.timeEnd,
+    tempStart:s.tempStart,tempEnd:s.tempEnd,tempSetPoint:s.tempSetPoint,
+    countingTime:m.countingTime,timePerStep:m.timePerStep,
+    scanSpeed:m.scanSpeed,scanSpeedUnit:m.scanSpeedUnit,scanStart:m.scanStart,scanStop:m.scanStop
+  });
 }
 
 async function parseHDF5(arrayBuffer,fname){
@@ -941,11 +1083,10 @@ async function parseHDF5(arrayBuffer,fname){
     const entry=entryKey?f.get(entryKey):f;
 
     /* ---- helper: safely read a scalar dataset inside entry ---- */
-    const rd=(path)=>{try{return entry.get(path)?.value;}catch(_e){return null;}};
+    const rd=(path)=>h5Rd(entry,path);
 
     /* ---- metadata ---- */
-    const timeStart=_h5date(rd('start_time'));
-    const timeEnd=_h5date(rd('end_time'));
+    const{ t0:timeStart,t1:timeEnd }=h5ReadTimes(entry);
     const title=_h5str(rd('title'));
     const sampleName=_h5str(rd('sample/name'))||title||fname.replace(/\.hdf?5$/i,'');
     const sampleDesc=_h5str(rd('sample/description'));
@@ -1056,7 +1197,7 @@ function _buildSample(name,fname,tth,intensity,opts={}){
   const maxI=Math.max(...intensity);
   const maxIdx=intensity.indexOf(maxI);
   const segs=[];
-  return{
+  const sample={
     name,rawName:fname,tth,intensity,maxI,peakPos:tth[maxIdx].toFixed(2),
     sampleUid:newSampleUid(),color:'#fff',visible:true,group:'A',
     scanRate:null,rampStartTemp:null,tempSetPoint,tempStart,tempEnd,timeStart,timeEnd,segments:segs,
@@ -1072,6 +1213,8 @@ function _buildSample(name,fname,tth,intensity,opts={}){
       countingTime,timePerStep,sampleDesc,spinning
     }
   };
+  applyThermalDefaultsToSample(sample,fname,opts);
+  return sample;
 }
 
 /** Format dispatcher */
@@ -1090,9 +1233,9 @@ function parseAny(file,textOrBuffer){
 
 function finishRasBatch(pendingRef){
   if(--pendingRef.n>0)return;
-  samples.sort(naturalCompare);
+  samples.sort(naturalCompareSamples);
   samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
-  try{renderAll();}catch(e){console.error(e);toast('表示更新: '+(e.message||e));}
+  try{renderAll();}catch(e){console.error(e);toast('UI update: '+(e.message||e));}
   void refreshDbPanels().catch(err=>{console.error(err);toast('DB: '+(err.message||err));});
 }
 
@@ -1153,8 +1296,8 @@ function renderSampleList(){
     <div class="sample-item" style="opacity:${s.visible?1:.45}">
       <div class="sample-row">
         <div style="width:10px;height:10px;border-radius:50%;background:${s.color}"></div>
-        <div class="sample-name">${esc(s.name)}</div>
-        <div class="sample-meta">peak ${s.peakPos}° | T ${Number.isFinite(s.tempSetPoint)?s.tempSetPoint.toFixed(1):(s.tempStart!=null?s.tempStart.toFixed(1):'-')} °C${s.meta?.lambda?` | λ=${s.meta.lambda.toFixed(4)} Å`:''}</div>
+        <div class="sample-name" title="${esc(defaultFileLegend(s))}">${esc(defaultFileLegend(s))}</div>
+        <div class="sample-meta">peak ${s.peakPos}° | T ${Number.isFinite(s.tempSetPoint)?s.tempSetPoint.toFixed(1):(s.tempStart!=null?s.tempStart.toFixed(1):'-')} °C${s.meta?.lambda?' | λ='+s.meta.lambda.toFixed(4)+' Å':''}</div>
         <button class="btn" onclick="toggleVisible(${i})">eye</button>
         <button class="btn warn" onclick="removeSample(${i})">x</button>
       </div>
@@ -1290,13 +1433,14 @@ function renderXrdTraceList(){
   if(!vis.length){el.innerHTML='<div class="empty">Load samples (and select series if needed)</div>';return;}
   el.innerHTML=vis.map((s,i)=>{
     const si=samples.indexOf(s);
-    const leg=xrdDisplayLegend(s);
+    const defLeg=defaultFileLegend(s);
+    const leg=(s.xrdLegendLabel!=null&&String(s.xrdLegendLabel).trim())?String(s.xrdLegendLabel).trim():defLeg;
     const hidden=!!xrdHiddenByKey.get(xrdKey(s));
     return`<div class="outer-seg-row">
       <input type="checkbox" ${hidden?'':'checked'} onchange="setXrdTraceVisible(${si},this.checked)">
       <span style="min-width:0;flex:1"><strong>${esc(s.name)}</strong></span>
       <div class="outer-seg-fields" style="grid-column:1/-1">
-        <label>Legend<input class="txt-sm num-wide" type="text" value="${esc(s.xrdLegendLabel!=null?s.xrdLegendLabel:leg)}" placeholder="${esc(s.name)}" onchange="setXrdLegend(${si},this.value)"></label>
+        <label>Legend<input class="txt-sm num-wide" type="text" value="${esc(leg)}" placeholder="${esc(defLeg)}" onchange="setXrdLegend(${si},this.value)"></label>
         <label>Color<input type="color" value="${esc(s.color)}" oninput="setXrdColor(${si},this.value)"></label>
       </div>
     </div>`;
@@ -1320,7 +1464,7 @@ function buildXrdDatasets(vis){
   });
   return d;
 }
-function defaultSegLegend(s,seg){return `${s.name} — ${seg.segType}`;}
+function defaultSegLegend(s,_seg){return defaultFileLegend(s);}
 function segDisplayColor(seg,s){return (seg.color&&seg.color.trim())?seg.color.trim():s.color;}
 function readOuterScaleOpts(){return readXrdScaleOpts();}
 function syncOuterChartHeight(){
@@ -1483,7 +1627,7 @@ function redrawThermal(){
     });
   }
   list.forEach(s=>refreshSegmentsForSample(s));
-  const pts=buildSimpleThermalPolyline(list);
+  const{pts,pointColors}=buildSimpleThermalPolyline(list);
   if(pts.length<2){
     thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets:[]},options:emptyOpts});
     updateThermalStatus();return;
@@ -1492,7 +1636,11 @@ function redrawThermal(){
   const scales=buildThermalChartScales(yR);
   thermalChart=new Chart(document.getElementById('thermalCanvas'),{
     type:'line',
-    data:{datasets:[{label,data:pts,borderColor:'#4a9eff',backgroundColor:'#4a9eff',borderWidth:2,pointRadius:3,pointHoverRadius:5,tension:0,fill:false}]},
+    data:{datasets:[{
+      label,data:pts,borderColor:THERMAL_BRIDGE_COLOR,borderWidth:2,
+      pointRadius:4,pointHoverRadius:5,pointBackgroundColor:pointColors,pointBorderColor:pointColors,
+      tension:0,spanGaps:false,fill:false
+    }]},
     options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:8,font:{size:10}}}},scales}
   });
   updateThermalStatus();
@@ -1603,12 +1751,13 @@ function renderOuterSegmentList(){
   if(!all.length){el.innerHTML='<div class="empty">No traces — check series members have XRD data</div>';return;}
   el.innerHTML=all.map(({s,si,seg,gi})=>{
     const col=segDisplayColor(seg,s);
-    const leg=seg.legendLabel!=null?seg.legendLabel:defaultSegLegend(s,seg);
+    const defLeg=defaultSegLegend(s,seg);
+    const leg=(seg.legendLabel!=null&&String(seg.legendLabel).trim())?String(seg.legendLabel).trim():defLeg;
     const cso=seg.combineStackOffset||0;
     return`<div class="outer-seg-row">
-      <span style="min-width:0"><strong>${esc(s.name)}</strong> <span style="color:var(--text3)">/ ${esc(seg.segType)}</span></span>
+      <span style="min-width:0"><strong>${esc(defLeg)}</strong> <span style="color:var(--text3)">/ ${esc(seg.segType)}</span></span>
       <div class="outer-seg-fields">
-        <label>Legend<input class="txt-sm num-wide" type="text" value="${esc(leg)}" placeholder="${esc(defaultSegLegend(s,seg))}" onchange="setSegLegend(${si},${gi},this.value)"></label>
+        <label>Legend<input class="txt-sm num-wide" type="text" value="${esc(leg)}" placeholder="${esc(defLeg)}" onchange="setSegLegend(${si},${gi},this.value)"></label>
         <label>Color<input type="color" value="${esc(col)}" oninput="setSegColor(${si},${gi},this.value)"></label>
         <label>Stack off<input class="num num-wide" type="number" step="50" value="${cso}" oninput="setSegCombineStackOffset(${si},${gi},this.value)"></label>
         <label>Δ2θ<input class="num num-wide" type="number" step="0.02" value="${seg.xOffset||0}" oninput="setSegXoff(${si},${gi},this.value)"></label>
@@ -1708,12 +1857,13 @@ function renderSeriesEditorMemberList(){
   if(!el)return;
   const orderHtml=seriesDraftOrder.length?`<div style="margin:.5rem 0;font-size:11px;color:var(--text3)">Order (top = first segment)</div>`+seriesDraftOrder.map((uid,oi)=>{
     const s=samples.find(x=>x.sampleUid===uid);
-    const nm=s?esc(s.name):esc(uid);
-    return`<div class="ctrl-row" style="margin:4px 0;align-items:center"><span style="min-width:18px">${oi+1}</span><span style="flex:1;min-width:0">${nm}</span><button type="button" class="btn" onclick="moveSeriesDraft(${oi},-1)">Up</button><button type="button" class="btn" onclick="moveSeriesDraft(${oi},1)">Down</button><button type="button" class="btn warn" onclick="removeSeriesDraftAt(${oi})">x</button></div>`;
+    const nm=s?esc(defaultFileLegend(s)):esc(uid);
+    return`<div class="ctrl-row" style="margin:4px 0;align-items:center"><span style="min-width:18px">${oi+1}</span><span style="flex:1;min-width:0;word-break:break-all">${nm}</span><button type="button" class="btn" onclick="moveSeriesDraft(${oi},-1)">Up</button><button type="button" class="btn" onclick="moveSeriesDraft(${oi},1)">Down</button><button type="button" class="btn warn" onclick="removeSeriesDraftAt(${oi})">x</button></div>`;
   }).join(''):'<div class="empty" style="padding:.5rem">No samples in series yet — check samples below</div>';
   const pick=!samples.length?'<div class="empty">No samples loaded</div>':samples.map((s,si)=>{
     const on=seriesDraftOrder.includes(s.sampleUid);
-    return`<div class="ctrl-row" style="margin:3px 0;align-items:center"><label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" ${on?'checked':''} onchange="toggleSeriesDraftMemberByIdx(${si},this.checked)"><span>${esc(s.name)}</span></label></div>`;
+    const fn=defaultFileLegend(s);
+    return`<div class="ctrl-row" style="margin:3px 0;align-items:flex-start"><label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;flex:1;min-width:0"><input type="checkbox" ${on?'checked':''} onchange="toggleSeriesDraftMemberByIdx(${si},this.checked)" style="margin-top:2px"><span style="word-break:break-all;min-width:0">${esc(fn)}</span></label></div>`;
   }).join('');
   el.innerHTML=orderHtml+'<div style="margin-top:.75rem;font-size:11px;color:var(--text3)">Include samples</div>'+pick;
 }
@@ -1810,7 +1960,7 @@ function updateThermalStatus(){
     if(!ser)msg+=' Mode: Series — create/select a series (Edit series or Series from all).';
     else msg+=` Series "${ser.name}" (${ser.memberUids.length} members).`;
   }else msg+=' Mode: Per file.';
-  if(!n)msg+=' Set start/end time (from HDF5) and T (°C); default T from filename.';
+  if(!n)msg+=' Set start/end time and T (°C). HDF5/RAS times from file; T from filename or RAS header.';
   el.textContent=msg;
 }
 function createSeriesFromAllSamples(){
@@ -1904,7 +2054,7 @@ function hydrateProject(payload,{replace=true}={}){
     }
     samples.push(s);
   });
-  samples.sort(naturalCompare);samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
+  samples.sort(naturalCompareSamples);samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
   pruneThermalSeriesMissingMembers();
   pruneCombineMissingSeries();
   applyOuterChartSettingsToDom(payload);
@@ -2056,7 +2206,7 @@ async function loadFileFromDb(id){
     p.color=COLORS[samples.length%COLORS.length];
     ensureSampleThermal(p);
     samples.push(p);
-    samples.sort(naturalCompare);
+    samples.sort(naturalCompareSamples);
     samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
     renderAll();
     toast(`Loaded ${rec.name}`);
@@ -2127,11 +2277,45 @@ async function importFullDb(file){
   r.readAsText(file,'UTF-8');
 }
 
-const dropZone=document.getElementById('dropZone');
-dropZone.addEventListener('click',()=>document.getElementById('fileIn').click());
-dropZone.addEventListener('dragover',e=>{e.preventDefault();dropZone.classList.add('drag');});
-dropZone.addEventListener('dragleave',()=>dropZone.classList.remove('drag'));
-dropZone.addEventListener('drop',e=>{e.preventDefault();dropZone.classList.remove('drag');handleFiles(e.dataTransfer.files);});
+function initFileDrop(){
+  const dz=document.getElementById('dropZone');
+  let dragDepth=0;
+  const highlight=on=>{if(dz)dz.classList.toggle('drag',!!on);};
+  const onDragOver=e=>{e.preventDefault();e.stopPropagation();if(e.dataTransfer)e.dataTransfer.dropEffect='copy';};
+  const onDragEnter=e=>{
+    e.preventDefault();e.stopPropagation();
+    dragDepth++;
+    highlight(true);
+  };
+  const onDragLeave=e=>{
+    e.preventDefault();e.stopPropagation();
+    dragDepth=Math.max(0,dragDepth-1);
+    if(dragDepth===0)highlight(false);
+  };
+  const onDrop=e=>{
+    e.preventDefault();e.stopPropagation();
+    dragDepth=0;
+    highlight(false);
+    const files=e.dataTransfer?.files;
+    if(files&&files.length)handleFiles(files);
+  };
+  [dz,document.body].filter(Boolean).forEach(el=>{
+    el.addEventListener('dragover',onDragOver);
+    el.addEventListener('dragenter',onDragEnter);
+    el.addEventListener('dragleave',onDragLeave);
+    el.addEventListener('drop',onDrop);
+  });
+  window.addEventListener('dragover',e=>{e.preventDefault();});
+  window.addEventListener('drop',e=>{
+    e.preventDefault();
+    dragDepth=0;
+    highlight(false);
+    const files=e.dataTransfer?.files;
+    if(files&&files.length)handleFiles(files);
+  });
+  if(dz)dz.addEventListener('click',()=>document.getElementById('fileIn')?.click());
+}
+initFileDrop();
 document.getElementById('fileIn').addEventListener('change',e=>{handleFiles(e.target.files);e.target.value='';});
 document.getElementById('projectIn').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importProjectJson(f);e.target.value='';});
 document.getElementById('dataIn').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importDataJson(f);e.target.value='';});
