@@ -221,6 +221,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <select class="txt-sm" id="thermalSeriesSelect" style="max-width:160px" onchange="setActiveThermalSeriesId(this.value)"></select>
               <button class="btn" onclick="openSeriesEditorModal()">Edit series</button>
               <span>Unit</span>
+              <button class="btn" onclick="setUnit('date')">date</button>
               <button class="btn" onclick="setUnit('sec')">sec</button>
               <button class="btn" onclick="setUnit('min')">min</button>
               <button class="btn" onclick="setUnit('hour')">hour</button>
@@ -236,12 +237,18 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
         <div class="panel-head">
           <div>
             <span class="panel-title">Combine (2θ vs intensity)</span>
-            <div style="font-size:10px;color:var(--text3);margin-top:3px">Overlay XRD for selected segments. Edit legend, color, and offsets below.</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:3px">Each combine links to a thermal series. Multiple combines supported.</div>
           </div>
         </div>
         <div class="panel-body outer-combine-layout">
           <div class="outer-combine-side">
-            <div class="combine-controls">
+            <div class="combine-controls" style="flex-wrap:wrap">
+              <label>Combine<select class="txt-sm" id="combineSelect" onchange="setActiveCombineId(this.value)"></select></label>
+              <label>Series<select class="txt-sm" id="combineSeriesSelect" onchange="setActiveCombineSeriesId(this.value)"></select></label>
+              <label>Name<input class="txt-sm" id="combineNameInput" type="text" onchange="setActiveCombineName(this.value)"></label>
+              <button type="button" class="btn green" onclick="createCombineFromActiveSeries()">+ From series</button>
+              <button type="button" class="btn" onclick="addNewCombine()">+ New</button>
+              <button type="button" class="btn warn" onclick="deleteActiveCombine()">Delete</button>
               <label>Height (px)<input class="num" id="outerChartHeight" type="number" min="200" max="1200" step="20" value="420" oninput="applyOuterChartLayout()"></label>
               <label>2θ min<input class="num" id="outerXMin" type="number" step="0.5" value="2" oninput="redrawOuterChart()"></label>
               <label>2θ max<input class="num" id="outerXMax" type="number" step="0.5" value="32" oninput="redrawOuterChart()"></label>
@@ -370,6 +377,8 @@ let uiTheme='light';
 let thermalViewMode='per';
 let thermalSeriesList=[];
 let activeThermalSeriesId=null;
+let combineList=[];
+let activeCombineId=null;
 let seriesEditorTargetId=null;
 let seriesDraftOrder=[];
 
@@ -542,31 +551,21 @@ function thermalUiStartDate(s){
 function thermalUiEndDate(s){
   return s.thermalTimeEndOverride?new Date(s.thermalTimeEndOverride):(s.timeEnd instanceof Date?s.timeEnd:null);
 }
-function thermalUiTempStartStr(s){
-  if(s.thermalTempStartOverride!=null&&Number.isFinite(+s.thermalTempStartOverride))return String(s.thermalTempStartOverride);
-  if(Number.isFinite(s.tempStart))return String(s.tempStart);
-  return'';
+function sampleThermalTempC(s){
+  if(s.thermalTempOverride!=null&&Number.isFinite(+s.thermalTempOverride))return+s.thermalTempOverride;
+  if(s.thermalTempStartOverride!=null&&Number.isFinite(+s.thermalTempStartOverride))return+s.thermalTempStartOverride;
+  if(Number.isFinite(s.tempStart))return s.tempStart;
+  if(Number.isFinite(s.tempSetPoint))return s.tempSetPoint;
+  return null;
 }
-function thermalUiTempEndStr(s){
-  if(s.thermalTempEndOverride!=null&&Number.isFinite(+s.thermalTempEndOverride))return String(s.thermalTempEndOverride);
-  if(Number.isFinite(s.tempEnd))return String(s.tempEnd);
-  return'';
+function thermalUiTempStr(s){
+  const T=sampleThermalTempC(s);
+  return Number.isFinite(T)?String(T):'';
 }
-function thermalUiTempSetPointStr(s){
-  if(Number.isFinite(s.tempSetPoint))return String(s.tempSetPoint);
-  return'';
-}
-/** Parse e.g. "..._80.0C.hdf5" or "..._-40.0C.hdf5" → °C */
 function parseTempFromFilename(fname){
   if(!fname)return null;
   const m=String(fname).match(/([+-]?\d+(?:\.\d+)?)\s*°?\s*C(?=\.|_|$|\s|#)/i);
   return m&&Number.isFinite(parseFloat(m[1]))?parseFloat(m[1]):null;
-}
-/** NeXus temperature_SP is usually Kelvin; values below 200 treated as Celsius already */
-function h5TempToC(val){
-  const n=_h5num(val);
-  if(n==null||!Number.isFinite(n))return null;
-  return n>200?n-273.15:n;
 }
 function resolveSampleTemps(fname,opts={}){
   let tempSetPoint=Number.isFinite(opts.tempSetPoint)?opts.tempSetPoint:null;
@@ -585,15 +584,15 @@ function parseDatetimeLocalToDate(str){
   const d=new Date(str);
   return isNaN(d.getTime())?null:d;
 }
+/** Measurement window: times from file/metadata; T is manual (flat start=end). */
 function getEffectiveThermal(s){
   const t0=s.thermalTimeStartOverride?new Date(s.thermalTimeStartOverride):s.timeStart;
   const t1=s.thermalTimeEndOverride?new Date(s.thermalTimeEndOverride):s.timeEnd;
-  const T0=s.thermalTempStartOverride!=null&&Number.isFinite(+s.thermalTempStartOverride)?+s.thermalTempStartOverride:s.tempStart;
-  const T1=s.thermalTempEndOverride!=null&&Number.isFinite(+s.thermalTempEndOverride)?+s.thermalTempEndOverride:s.tempEnd;
+  const T=sampleThermalTempC(s);
   if(!t0||!t1||!(t0 instanceof Date)||!(t1 instanceof Date)||isNaN(t0.getTime())||isNaN(t1.getTime()))return null;
-  if(!Number.isFinite(T0)||!Number.isFinite(T1))return null;
+  if(!Number.isFinite(T))return null;
   if(t1.getTime()<=t0.getTime())return null;
-  return{t0,t1,T0:+T0,T1:+T1};
+  return{t0,t1,T0:T,T1:T};
 }
 function segmentUiForKind(s,kind){
   const m=(s.segments||[]).find(x=>x.segType===kind||x.kind===kind);
@@ -620,7 +619,7 @@ function buildAbsoluteThermalSegments(s){
     out.push({t0:tR0,t1:tMeas0,y0:s.rampStartTemp,y1:eff.T0,kind:'ramp',yOffset:ui.yOffset,yGain:ui.yGain});
   }
   const uiM=segmentUiForKind(s,'measurement');
-  out.push({t0:tMeas0,t1:tMeas1,y0:eff.T0,y1:eff.T1,kind:'measurement',yOffset:uiM.yOffset,yGain:uiM.yGain});
+  out.push({t0:tMeas0,t1:tMeas1,y0:eff.T0,y1:eff.T0,kind:'measurement',yOffset:uiM.yOffset,yGain:uiM.yGain});
   return out;
 }
 function naturalKey(str){return str.split(/(\d+)/).map((s,i)=>i%2===0?s.toLowerCase():parseInt(s,10));}
@@ -667,7 +666,7 @@ function refreshSegmentsForSample(s){
       const rampSec=Math.abs(dT/s.scanRate)*60;
       segs.push({idx:idx++,label:'ramp',segType:'ramp',t0:-rampSec,t1:0,y0:s.rampStartTemp,y1:eff.T0,selectedOuter:false,visible:true,xOffset:0,yOffset:0,yGain:1,color:'',legendLabel:'',combineStackOffset:0});
     }
-    segs.push({idx:idx++,label:'measurement',segType:'measurement',t0:0,t1:measSec,y0:eff.T0,y1:eff.T1,selectedOuter:false,visible:true,xOffset:0,yOffset:0,yGain:1,color:'',legendLabel:'',combineStackOffset:0});
+    segs.push({idx:idx++,label:'measurement',segType:'measurement',t0:0,t1:measSec,y0:eff.T0,y1:eff.T0,selectedOuter:false,visible:true,xOffset:0,yOffset:0,yGain:1,color:'',legendLabel:'',combineStackOffset:0});
   }
   const prev=new Map((s.segments||[]).map(x=>[x.label+'_'+x.segType,x]));
   s.segments=segs.map(seg=>{
@@ -677,6 +676,43 @@ function refreshSegmentsForSample(s){
 }
 function toUnit(sec){if(timeUnit==='min')return sec/60;if(timeUnit==='hour')return sec/3600;return sec;}
 function fromUnit(v){if(timeUnit==='min')return v*60;if(timeUnit==='hour')return v*3600;return v;}
+function thermalToX(ms,tRef){return timeUnit==='date'?ms:toUnit((ms-tRef)/1000);}
+function thermalXAxisTitle(){return timeUnit==='date'?'Time (date)':`Time (${timeUnit==='min'?'min':timeUnit==='hour'?'hour':'sec'})`;}
+function formatThermalXTick(v){
+  if(timeUnit!=='date')return v;
+  const d=new Date(v);
+  return isNaN(d.getTime())?'':d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+/** Connect flat-T measurement windows in series order (time on X, °C on Y). */
+function buildSimpleThermalPolyline(sampleList){
+  const effs=[];
+  (sampleList||[]).forEach(s=>{
+    if(s.visible===false)return;
+    const e=getEffectiveThermal(s);
+    if(e)effs.push({t0:e.t0.getTime(),t1:e.t1.getTime(),T:e.T0});
+  });
+  if(!effs.length)return[];
+  const tRef=timeUnit==='date'?0:Math.min(...effs.map(e=>e.t0));
+  const pts=[],eps=1e-6;
+  effs.forEach((e,i)=>{
+    const x0=thermalToX(e.t0,tRef),x1=thermalToX(e.t1,tRef);
+    if(!pts.length){pts.push({x:x0,y:e.T});}
+    else{
+      const prev=effs[i-1];
+      const px=thermalToX(prev.t1,tRef);
+      const last=pts[pts.length-1];
+      if(Math.abs(last.x-px)>eps||Math.abs(last.y-prev.T)>eps)pts.push({x:px,y:prev.T});
+      if(Math.abs(px-x0)>eps||Math.abs(prev.T-e.T)>eps)pts.push({x:x0,y:e.T});
+    }
+    pts.push({x:x1,y:e.T});
+  });
+  return pts;
+}
+function buildThermalChartScales(yR={}){
+  const x={type:'linear',title:{display:true,text:thermalXAxisTitle()}};
+  if(timeUnit==='date')x.ticks={callback:v=>formatThermalXTick(v)};
+  return{x,y:{title:{display:true,text:'Temperature (°C)'},...yR}};
+}
 
 /* =====================================================================
    Multi-format parsers
@@ -885,8 +921,6 @@ async function parseHDF5(arrayBuffer,fname){
     const scanStop=_h5num(rd('info/stop'));
     const timePerStep=_h5num(rd('info/time_per_step'));
     const spinning=_h5num(rd('instrument/instrument_info/sample_spinning'));
-    const tempSetC=h5TempToC(rd('sample/temperature_SP'));
-
     /* ---- data arrays ---- */
     let tthData=null,intData=null;
     /* Anton Paar NeXus layout: entry/data/two_theta + entry/data/data (shape 1×N×1) */
@@ -944,7 +978,7 @@ async function parseHDF5(arrayBuffer,fname){
     const tth=tthData.slice(0,n);
     const intensity=intData.slice(0,n);
 
-    const temps=resolveSampleTemps(fname,{tempSetPoint:tempSetC});
+    const temps=resolveSampleTemps(fname,{});
     return _buildSample(sampleName,fname,tth,intensity,{
       timeStart,timeEnd,lambda,
       tempSetPoint:temps.tempSetPoint,tempStart:temps.tempStart,tempEnd:temps.tempEnd,
@@ -977,19 +1011,13 @@ function _buildSample(name,fname,tth,intensity,opts={}){
   const maxI=Math.max(...intensity);
   const maxIdx=intensity.indexOf(maxI);
   const segs=[];
-  if(timeStart instanceof Date&&timeEnd instanceof Date&&
-     !isNaN(timeStart.getTime())&&!isNaN(timeEnd.getTime())&&
-     timeEnd>timeStart&&Number.isFinite(tempStart)&&Number.isFinite(tempEnd)){
-    const s1=(timeEnd-timeStart)/1000;
-    segs.push({idx:0,label:'measurement',segType:'measurement',t0:0,t1:s1,y0:tempStart,y1:tempEnd,selectedOuter:false,visible:true,xOffset:0,yOffset:0,yGain:1,color:'',legendLabel:'',combineStackOffset:0});
-  }
   return{
     name,rawName:fname,tth,intensity,maxI,peakPos:tth[maxIdx].toFixed(2),
     sampleUid:newSampleUid(),color:'#fff',visible:true,group:'A',
     scanRate:null,rampStartTemp:null,tempSetPoint,tempStart,tempEnd,timeStart,timeEnd,segments:segs,
     xrdOffsetManual:0,intensityGainManual:1,
     thermalTimeStartOverride:null,thermalTimeEndOverride:null,
-    thermalTempStartOverride:null,thermalTempEndOverride:null,
+    thermalTempOverride:null,thermalTempStartOverride:null,thermalTempEndOverride:null,
     meta:{
       lambda,voltage,current,waveType,
       scanSpeed,scanSpeedUnit,scanStep,scanStart,scanStop,scanMode,scanAxis,scanType,
@@ -1125,24 +1153,14 @@ function renderSampleList(){
       <details class="seg-acc sample-thermal-acc" ${openSampleThermalAcc.has(`t${i}`)?'open':''} ontoggle="onSampleThermalAccToggle(event,${i})">
         <summary><span class="seg-acc-title">Thermal / segments</span><span style="font-size:10px;color:var(--text3)">click to expand</span></summary>
         <div class="seg-acc-body">
-          <div class="ctrl-row" style="margin-top:2px">
-            <span>Set T (°C)</span><input class="num" type="number" step="0.1" placeholder="auto" value="${esc(thermalUiTempSetPointStr(s))}" oninput="setTempSetPoint(${i},this.value)">
-            <span>Ramp start</span><input class="num" type="number" value="${s.rampStartTemp!=null?s.rampStartTemp:''}" oninput="setRampStart(${i},this.value)">
-            <span>Rate</span><input class="num" type="number" value="${s.scanRate!=null?s.scanRate:''}" oninput="setScanRate(${i},this.value)">
-            <span>°C/min</span>
-          </div>
-          <div style="font-size:10px;color:var(--text3);margin-top:8px">Measurement window (from file; editable)</div>
-          <div class="ctrl-row" style="margin-top:4px">
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">Times from file metadata (editable). T defaults from filename; edit to override.</div>
+          <div class="ctrl-row" style="margin-top:6px">
             <span>Start</span>
             <input class="txt-sm" type="datetime-local" step="60" value="${esc(formatDatetimeLocalValue(thermalUiStartDate(s)))}" onchange="setThermalTimeStartOverride(${i},this.value)">
-            <span>T start</span>
-            <input class="num" type="number" step="0.1" placeholder="auto" value="${esc(thermalUiTempStartStr(s))}" oninput="setThermalTempStartOverride(${i},this.value)">
-          </div>
-          <div class="ctrl-row" style="margin-top:4px">
             <span>End</span>
             <input class="txt-sm" type="datetime-local" step="60" value="${esc(formatDatetimeLocalValue(thermalUiEndDate(s)))}" onchange="setThermalTimeEndOverride(${i},this.value)">
-            <span>T end</span>
-            <input class="num" type="number" step="0.1" placeholder="auto" value="${esc(thermalUiTempEndStr(s))}" oninput="setThermalTempEndOverride(${i},this.value)">
+            <span>T (°C)</span>
+            <input class="num" type="number" step="0.1" placeholder="from filename" value="${esc(thermalUiTempStr(s))}" oninput="setSampleThermalTemp(${i},this.value)">
           </div>
           <div class="sample-seg-block" style="margin-top:10px;padding-top:8px">
             <div style="font-size:10px;color:var(--text3);margin-bottom:4px">Segments — combine options in Combine panel. Y offset/gain affect thermal plot.</div>
@@ -1354,88 +1372,122 @@ function thermalDatasetFromPolyline(label,pts,edge,colorRunRef){
 }
 function redrawThermal(){
   if(thermalChart)thermalChart.destroy();
-  const u=timeUnit==='sec'?'sec':timeUnit==='min'?'min':'hour';
   const emptyOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}};
-  const buildScales=unit=>({x:{type:'linear',title:{display:true,text:`Time (${unit})`}},y:{title:{display:true,text:'Temperature (C)'}}});
-
-  if(thermalViewMode==='series'&&activeThermalSeriesId){
+  let list=[],label='Thermal';
+  const useSeries=thermalViewMode==='series'||!!activeThermalSeriesId;
+  if(useSeries&&activeThermalSeriesId){
     const ser=thermalSeriesList.find(x=>x.id===activeThermalSeriesId);
-    if(!ser||!ser.memberUids||!ser.memberUids.length){
+    if(!ser||!ser.memberUids?.length){
       thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets:[]},options:emptyOpts});
       return;
     }
-    const members=ser.memberUids.map(uid=>samples.find(x=>x.sampleUid===uid)).filter(Boolean).filter(s=>s.visible);
-    const allSegs=[];
-    members.forEach(s=>{
-      refreshSegmentsForSample(s);
-      buildAbsoluteThermalSegments(s).forEach(seg=>allSegs.push(seg));
+    list=ser.memberUids.map(uid=>samples.find(x=>x.sampleUid===uid)).filter(Boolean);
+    label=ser.name||'Series';
+  }else if(thermalViewMode==='series'){
+    thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets:[]},options:emptyOpts});
+    return;
+  }else{
+    list=[...samples].sort((a,b)=>{
+      const ea=getEffectiveThermal(a),eb=getEffectiveThermal(b);
+      if(!ea)return 1;if(!eb)return -1;
+      return ea.t0.getTime()-eb.t0.getTime();
     });
-    if(!allSegs.length){
-      thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets:[]},options:emptyOpts});
-      return;
-    }
-    const tRef=Math.min(...allSegs.map(seg=>seg.t0));
-    const colorRun={i:0};
-    const mergedPts=[],mergedEdge=[];
-    let prevEnd=null;
-    members.forEach(s=>{
-      const abs=buildAbsoluteThermalSegments(s);
-      if(!abs.length)return;
-      if(prevEnd){
-        const nextStart=abs[0];
-        const gapMs=nextStart.t0-prevEnd.t1;
-        if(gapMs>1000&&Math.abs(prevEnd.y1-nextStart.y0)>0.05){
-          const bridgePts=[
-            {x:toUnit((prevEnd.t1-tRef)/1000),y:prevEnd.y1},
-            {x:toUnit((nextStart.t0-tRef)/1000),y:nextStart.y0}
-          ];
-          thermalAppendMerged(mergedPts,mergedEdge,bridgePts,[{kind:'bridge'}]);
-        }
-      }
-      const {pts,edge}=thermalPolylineFromSegs(abs,t=>toUnit((t-tRef)/1000));
-      thermalAppendMerged(mergedPts,mergedEdge,pts,edge);
-      const last=abs[abs.length-1];
-      prevEnd={t1:last.t1,y1:last.y1};
-    });
-    const ds=thermalDatasetFromPolyline(ser.name||'Series',mergedPts,mergedEdge,colorRun);
-    const segDatasets=ds?[ds]:[];
-    const yR=thermalYRangeFromPoints(segDatasets.map(d=>d.data));
-    const scales=buildScales(u);
-    scales.y={...scales.y,...yR};
-    thermalChart=new Chart(document.getElementById('thermalCanvas'),{
-      type:'line',
-      data:{datasets:segDatasets},
-      options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:8,font:{size:10}}}},scales}
-    });
+  }
+  list.forEach(s=>refreshSegmentsForSample(s));
+  const pts=buildSimpleThermalPolyline(list);
+  if(pts.length<2){
+    thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets:[]},options:emptyOpts});
     return;
   }
-
-  const vis=samples.filter(s=>s.visible&&getEffectiveThermal(s));
-  if(!vis.length){thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets:[]},options:emptyOpts});return;}
-  const t0=Math.min(...vis.map(s=>getEffectiveThermal(s).t0.getTime()));
-  const colorRun={i:0};
-  const mergedPts=[],mergedEdge=[];
-  const visSorted=[...vis].sort((a,b)=>getEffectiveThermal(a).t0.getTime()-getEffectiveThermal(b).t0.getTime());
-  visSorted.forEach(s=>{
-    refreshSegmentsForSample(s);
-    const eff=getEffectiveThermal(s);
-    const sampleStartSec=(eff.t0.getTime()-t0)/1000;
-    const segs=s.segments.filter(seg=>seg.visible!==false);
-    const {pts,edge}=thermalPolylineFromSegs(segs,t=>toUnit(sampleStartSec+t));
-    thermalAppendMerged(mergedPts,mergedEdge,pts,edge);
+  const yR=thermalYRangeFromPoints([pts]);
+  const scales=buildThermalChartScales(yR);
+  thermalChart=new Chart(document.getElementById('thermalCanvas'),{
+    type:'line',
+    data:{datasets:[{label,data:pts,borderColor:'#4a9eff',backgroundColor:'#4a9eff',borderWidth:2,pointRadius:3,pointHoverRadius:5,tension:0,fill:false}]},
+    options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:8,font:{size:10}}}},scales}
   });
-  const ds=thermalDatasetFromPolyline('Thermal',mergedPts,mergedEdge,colorRun);
-  const datasets=ds?[ds]:[];
-  const flatPts=[];
-  datasets.forEach(ds=>{(ds.data||[]).forEach(p=>{if(p&&Number.isFinite(p.y))flatPts.push(p);});});
-  const yR=thermalYRangeFromPoints([flatPts]);
-  const scales=buildScales(u);
-  scales.y={...scales.y,...yR};
-  thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets},options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:8,font:{size:10}}}},scales}});
 }
 
+function getActiveCombine(){return activeCombineId?combineList.find(c=>c.id===activeCombineId):null;}
+function samplesForSeries(seriesId){
+  const ser=thermalSeriesList.find(x=>x.id===seriesId);
+  if(!ser||!ser.memberUids)return [];
+  return ser.memberUids.map(uid=>samples.find(s=>s.sampleUid===uid)).filter(Boolean).filter(s=>s.visible!==false);
+}
+function segmentsForSeries(seriesId){
+  const out=[];
+  samplesForSeries(seriesId).forEach(s=>{
+    const si=samples.indexOf(s);
+    refreshSegmentsForSample(s);
+    const seg=(s.segments||[]).find(x=>x.segType==='measurement')||(s.segments||[])[0];
+    if(seg){const gi=(s.segments||[]).indexOf(seg);out.push({s,si,seg,gi});}
+  });
+  return out;
+}
 function selectedOuterSegments(){
-  const out=[];samples.forEach((s,si)=>s.segments.forEach((seg,gi)=>{if(seg.selectedOuter)out.push({s,si,seg,gi});}));return out;
+  const cmb=getActiveCombine();
+  if(cmb&&cmb.seriesId)return segmentsForSeries(cmb.seriesId);
+  const out=[];
+  samples.forEach((s,si)=>{(s.segments||[]).forEach((seg,gi)=>{if(seg.selectedOuter)out.push({s,si,seg,gi});});});
+  return out;
+}
+function pruneCombineMissingSeries(){
+  const sids=new Set(thermalSeriesList.map(s=>s.id));
+  combineList.forEach(c=>{if(c.seriesId&&!sids.has(c.seriesId))c.seriesId=null;});
+  if(activeCombineId&&!combineList.some(c=>c.id===activeCombineId))activeCombineId=combineList[0]?.id||null;
+}
+function renderCombineSelect(){
+  const sel=document.getElementById('combineSelect');
+  const serSel=document.getElementById('combineSeriesSelect');
+  const nameIn=document.getElementById('combineNameInput');
+  if(sel){
+    sel.innerHTML=combineList.length?combineList.map(c=>`<option value="${esc(c.id)}">${esc(c.name||'Combine')}</option>`).join(''):'<option value="">(no combine)</option>';
+    sel.value=activeCombineId&&combineList.some(c=>c.id===activeCombineId)?activeCombineId:'';
+  }
+  if(serSel){
+    serSel.innerHTML='<option value="">(select series)</option>'+thermalSeriesList.map(s=>`<option value="${esc(s.id)}">${esc(s.name||'Series')}</option>`).join('');
+    const cmb=getActiveCombine();
+    serSel.value=cmb&&cmb.seriesId&&thermalSeriesList.some(s=>s.id===cmb.seriesId)?cmb.seriesId:'';
+  }
+  if(nameIn){const cmb=getActiveCombine();nameIn.value=cmb?cmb.name||'':'';nameIn.disabled=!cmb;}
+}
+function setActiveCombineId(id){
+  activeCombineId=id&&combineList.some(c=>c.id===id)?id:null;
+  renderCombineSelect();renderOuterSegmentList();redrawOuterChart();
+}
+function setActiveCombineSeriesId(seriesId){
+  const cmb=getActiveCombine();
+  if(!cmb){toast('Select or create a combine first');return;}
+  cmb.seriesId=seriesId&&thermalSeriesList.some(s=>s.id===seriesId)?seriesId:null;
+  renderCombineSelect();renderOuterSegmentList();redrawOuterChart();
+}
+function setActiveCombineName(v){
+  const cmb=getActiveCombine();
+  if(!cmb)return;
+  cmb.name=String(v||'').trim()||cmb.name;
+  renderCombineSelect();
+}
+function addNewCombine(){
+  const id=newSampleUid();
+  combineList.push({id,name:`Combine_${combineList.length+1}`,seriesId:activeThermalSeriesId||thermalSeriesList[0]?.id||null});
+  activeCombineId=id;
+  renderAll();
+}
+function createCombineFromActiveSeries(){
+  const seriesId=activeThermalSeriesId||document.getElementById('combineSeriesSelect')?.value;
+  if(!seriesId){toast('Select a thermal series first');return;}
+  const ser=thermalSeriesList.find(x=>x.id===seriesId);
+  const id=newSampleUid();
+  combineList.push({id,name:`Combine: ${ser.name}`,seriesId});
+  activeCombineId=id;
+  renderAll();
+  toast('Combine created');
+}
+function deleteActiveCombine(){
+  if(!activeCombineId){toast('No combine selected');return;}
+  combineList=combineList.filter(c=>c.id!==activeCombineId);
+  activeCombineId=combineList[0]?.id||null;
+  renderAll();
 }
 function onSegAccToggle(ev,si,gi){
   if(!ev||!ev.target)return;
@@ -1450,17 +1502,18 @@ function onSampleThermalAccToggle(ev,si){
 function renderOuterSegmentList(){
   const el=document.getElementById('outerSegList');
   const sel=selectedOuterSegments();
-  const all=[];samples.forEach((s,si)=>s.segments.forEach((seg,gi)=>all.push({s,si,seg,gi})));
+  const cmb=getActiveCombine();
+  const all=sel;
   if(!el)return;
-  if(!all.length){el.innerHTML='<div class="empty">No segments</div>';return;}
+  if(!cmb){el.innerHTML='<div class="empty">Create a combine (+ New or + From series)</div>';return;}
+  if(!cmb.seriesId){el.innerHTML='<div class="empty">Link a thermal series</div>';return;}
+  if(!all.length){el.innerHTML='<div class="empty">No traces in series</div>';return;}
   el.innerHTML=all.map(({s,si,seg,gi})=>{
     const col=segDisplayColor(seg,s);
     const leg=seg.legendLabel!=null?seg.legendLabel:defaultSegLegend(s,seg);
     const cso=seg.combineStackOffset||0;
     return`<div class="outer-seg-row">
-      <input type="checkbox" ${seg.selectedOuter?'checked':''} onchange="setOuterSel(${si},${gi},this.checked)">
       <span style="min-width:0"><strong>${esc(s.name)}</strong> <span style="color:var(--text3)">/ ${esc(seg.segType)}</span></span>
-      <span style="font-size:10px;color:var(--text3)">${seg.selectedOuter?'shown':''}</span>
       <div class="outer-seg-fields">
         <label>Legend<input class="txt-sm num-wide" type="text" value="${esc(leg)}" placeholder="${esc(defaultSegLegend(s,seg))}" onchange="setSegLegend(${si},${gi},this.value)"></label>
         <label>Color<input type="color" value="${esc(col)}" oninput="setSegColor(${si},${gi},this.value)"></label>
@@ -1470,7 +1523,7 @@ function renderOuterSegmentList(){
         <label>Y gain<input class="num num-wide" type="number" step="0.05" min="0.01" value="${(seg.yGain&&seg.yGain>0)?seg.yGain:1}" oninput="setSegYgain(${si},${gi},this.value)"></label>
       </div>
     </div>`;
-  }).join('')+`<div class="seg-item" style="color:var(--text3);padding:.4rem .25rem 0;margin-top:4px">selected: ${sel.length}</div>`;
+  }).join('')+`<div class="seg-item" style="color:var(--text3);padding:.4rem .25rem 0;margin-top:4px">traces: ${sel.length}</div>`;
 }
 function redrawOuterChart(){
   if(outerChart)outerChart.destroy();
@@ -1509,7 +1562,8 @@ function setThermalViewMode(m){
 }
 function setActiveThermalSeriesId(v){
   activeThermalSeriesId=v&&thermalSeriesList.some(x=>x.id===v)?v:null;
-  redrawThermal();
+  if(activeThermalSeriesId)thermalViewMode='series';
+  updateThermalModeButtons();renderThermalSeriesSelect();redrawThermal();
 }
 function pruneThermalSeriesMissingMembers(){
   const uids=new Set(samples.map(s=>s.sampleUid));
@@ -1527,16 +1581,21 @@ function setThermalTimeEndOverride(i,v){
   samples[i].thermalTimeEndOverride=d?d.toISOString():null;
   refreshSegmentsForSample(samples[i]);renderAll();
 }
-function setThermalTempStartOverride(i,v){
+function setSampleThermalTemp(i,v){
   const n=parseFloat(v);
-  samples[i].thermalTempStartOverride=v===''||v==null||isNaN(n)?null:n;
-  refreshSegmentsForSample(samples[i]);renderAll();
+  const s=samples[i];
+  if(v===''||v==null||isNaN(n)){
+    s.thermalTempOverride=null;s.thermalTempStartOverride=null;s.thermalTempEndOverride=null;
+    const temps=resolveSampleTemps(s.rawName||s.name||'');
+    s.tempSetPoint=temps.tempSetPoint;s.tempStart=temps.tempStart;s.tempEnd=temps.tempEnd;
+  }else{
+    s.thermalTempOverride=n;s.thermalTempStartOverride=n;s.thermalTempEndOverride=n;
+    s.tempStart=n;s.tempEnd=n;s.tempSetPoint=n;
+  }
+  refreshSegmentsForSample(s);renderAll();
 }
-function setThermalTempEndOverride(i,v){
-  const n=parseFloat(v);
-  samples[i].thermalTempEndOverride=v===''||v==null||isNaN(n)?null:n;
-  refreshSegmentsForSample(samples[i]);renderAll();
-}
+function setThermalTempStartOverride(i,v){setSampleThermalTemp(i,v);}
+function setThermalTempEndOverride(i,v){setSampleThermalTemp(i,v);}
 function openSeriesEditorModal(){
   const ser=activeThermalSeriesId?thermalSeriesList.find(x=>x.id===activeThermalSeriesId):null;
   seriesDraftOrder=ser&&ser.memberUids?[...ser.memberUids]:[];
@@ -1644,16 +1703,11 @@ async function deleteThermalSeriesFromDb(id,e){
   try{await adapter.deleteThermalSeries(id);await refreshDbPanels();toast('Deleted');}catch(err){toast(err.message);}
 }
 
-function renderAll(){renderSampleList();renderThermalSeriesSelect();updateThermalModeButtons();renderOuterSegmentList();redrawXrd();redrawThermal();}
+function renderAll(){renderSampleList();renderThermalSeriesSelect();renderCombineSelect();updateThermalModeButtons();renderOuterSegmentList();redrawXrd();redrawThermal();}
 function toggleVisible(i){samples[i].visible=!samples[i].visible;renderAll();}
-function removeSample(i){samples.splice(i,1);openSegmentAcc.clear();openSampleThermalAcc.clear();pruneThermalSeriesMissingMembers();samples.forEach((s,j)=>s.color=COLORS[j%COLORS.length]);renderAll();}
+function removeSample(i){samples.splice(i,1);openSegmentAcc.clear();openSampleThermalAcc.clear();pruneThermalSeriesMissingMembers();pruneCombineMissingSeries();samples.forEach((s,j)=>s.color=COLORS[j%COLORS.length]);renderAll();}
 function setScanRate(i,v){const n=parseFloat(v);samples[i].scanRate=isNaN(n)?null:n;refreshSegmentsForSample(samples[i]);renderAll();}
-function setTempSetPoint(i,v){
-  const n=parseFloat(v);
-  if(v===''||v==null||isNaN(n)){samples[i].tempSetPoint=null;}
-  else{samples[i].tempSetPoint=n;if(samples[i].thermalTempStartOverride==null)samples[i].tempStart=n;if(samples[i].thermalTempEndOverride==null)samples[i].tempEnd=n;}
-  refreshSegmentsForSample(samples[i]);renderAll();
-}
+function setTempSetPoint(i,v){setSampleThermalTemp(i,v);}
 function setRampStart(i,v){const n=parseFloat(v);samples[i].rampStartTemp=isNaN(n)?null:n;refreshSegmentsForSample(samples[i]);renderAll();}
 function setLayout(l){layout=l;const ml=document.getElementById('mainLayout');ml.classList.toggle('lr',l==='lr');document.getElementById('xrdPanel').style.display=l==='thermal'?'none':'block';document.getElementById('thermalPanel').style.display=l==='xrd'?'none':'block';renderAll();}
 function setXrdMode(m){xrdMode=m;redrawXrd();}
@@ -1690,7 +1744,7 @@ function exportChartImage(chart,base,format){
 function exportOuterChart(format){if(!outerChart){toast('Outer chart not ready');return;}exportChartImage(outerChart,`xrd_outer_th_${stamp()}`,format);}
 
 function serializeProject(){
-  return{version:3,kind:'xrd_th_db',savedAt:new Date().toISOString(),layout,xrdMode,timeUnit,xrdOffsetMode,xrdGainMode,thermalViewMode,thermalSeriesList,activeThermalSeriesId,...readOuterChartSettingsFromDom(),samples:samples.map(s=>({...s,timeStart:s.timeStart?s.timeStart.toISOString():null,timeEnd:s.timeEnd?s.timeEnd.toISOString():null}))};
+  return{version:3,kind:'xrd_th_db',savedAt:new Date().toISOString(),layout,xrdMode,timeUnit,xrdOffsetMode,xrdGainMode,thermalViewMode,thermalSeriesList,activeThermalSeriesId,combineList,activeCombineId,...readOuterChartSettingsFromDom(),samples:samples.map(s=>({...s,timeStart:s.timeStart?s.timeStart.toISOString():null,timeEnd:s.timeEnd?s.timeEnd.toISOString():null}))};
 }
 function serializeDataOnly(){
   return{version:2,kind:'xrd_th_data',savedAt:new Date().toISOString(),samples:samples.map(s=>({sampleUid:s.sampleUid,name:s.name,rawName:s.rawName,tth:s.tth,intensity:s.intensity,tempStart:s.tempStart,tempEnd:s.tempEnd,timeStart:s.timeStart?s.timeStart.toISOString():null,timeEnd:s.timeEnd?s.timeEnd.toISOString():null,thermalTimeStartOverride:s.thermalTimeStartOverride,thermalTimeEndOverride:s.thermalTimeEndOverride,thermalTempStartOverride:s.thermalTempStartOverride,thermalTempEndOverride:s.thermalTempEndOverride}))};
@@ -1705,6 +1759,12 @@ function hydrateProject(payload,{replace=true}={}){
   thermalSeriesList=Array.isArray(payload.thermalSeriesList)?payload.thermalSeriesList.map(x=>({id:x.id||newSampleUid(),name:x.name||'Series',folderPath:normalizeFolderPath(x.folderPath),memberUids:Array.isArray(x.memberUids)?[...x.memberUids]:[]})).filter(x=>x.memberUids.length):[];
   activeThermalSeriesId=thermalSeriesList.some(x=>x.id===payload.activeThermalSeriesId)?payload.activeThermalSeriesId:(thermalSeriesList[0]?.id||null);
   if(thermalViewMode==='series'&&(!thermalSeriesList.length||!activeThermalSeriesId))thermalViewMode='per';
+  combineList=Array.isArray(payload.combineList)?payload.combineList.map(c=>({id:c.id||newSampleUid(),name:c.name||'Combine',seriesId:c.seriesId||null})):[];
+  activeCombineId=combineList.some(c=>c.id===payload.activeCombineId)?payload.activeCombineId:(combineList[0]?.id||null);
+  if(!combineList.length&&thermalSeriesList.length){
+    combineList=thermalSeriesList.map(ser=>({id:newSampleUid(),name:`Combine: ${ser.name}`,seriesId:ser.id}));
+    activeCombineId=combineList[0]?.id||null;
+  }
   payload.samples.forEach((src,idx)=>{
     const s={...src,color:src.color||COLORS[(samples.length+idx)%COLORS.length],visible:src.visible!==false,tempSetPoint:Number.isFinite(src.tempSetPoint)?src.tempSetPoint:null,timeStart:src.timeStart?new Date(src.timeStart):null,timeEnd:src.timeEnd?new Date(src.timeEnd):null};
     ensureSampleUid(s);
@@ -1719,6 +1779,14 @@ function hydrateProject(payload,{replace=true}={}){
   });
   samples.sort(naturalCompare);samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
   pruneThermalSeriesMissingMembers();
+  pruneCombineMissingSeries();
+  samples.forEach(s=>{
+    if(!Number.isFinite(s.tempStart)&&!s.thermalTempOverride){
+      const temps=resolveSampleTemps(s.rawName||s.name||'');
+      s.tempSetPoint=temps.tempSetPoint;s.tempStart=temps.tempStart;s.tempEnd=temps.tempEnd;
+    }
+    refreshSegmentsForSample(s);
+  });
   applyOuterChartSettingsToDom(payload);
   updateXrdModeButtons();setLayout(layout);renderAll();
 }
