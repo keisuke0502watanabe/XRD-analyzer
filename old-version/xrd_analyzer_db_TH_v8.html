@@ -1,0 +1,3279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>XRD Analyzer DB TH v8</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;
+  --bg2:#f7f8fb;
+  --bg3:#eef1f6;
+  --bg4:#e4e9f2;
+  --border:#d6dce8;
+  --text:#1b1e24;
+  --text2:#3b4352;
+  --text3:#6b7383;
+  --accent:#4a9eff;
+  --ok:#3dba7e;
+  --warn:#e85a4a;
+}
+body.theme-dark{
+  --bg:#111;
+  --bg2:#181818;
+  --bg3:#202020;
+  --bg4:#2a2a2a;
+  --border:#2f2f2f;
+  --text:#e8e8e8;
+  --text2:#bbb;
+  --text3:#888;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:13px}
+.app{display:flex;min-height:100vh}
+.sidebar{width:290px;border-right:1px solid var(--border);background:var(--bg2);display:flex;flex-direction:column}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
+.topbar{height:44px;border-bottom:1px solid var(--border);background:var(--bg2);display:flex;align-items:center;gap:6px;padding:0 .8rem;overflow:auto;flex-shrink:0}
+.app-notice{display:none;font-size:11px;line-height:1.4;padding:.5rem .85rem;background:#fff3cd;border-bottom:1px solid #d9b24a;color:#4a3d08;flex-shrink:0;white-space:pre-wrap;word-break:break-word}
+.app-notice.app-notice--on{display:block}
+body.theme-dark .app-notice{background:#352a12;border-color:#8a7020;color:#f2e6c6}
+.brand{font-size:12px;font-weight:600;margin-right:8px;white-space:nowrap}
+.btn{font-size:11px;padding:4px 9px;border:1px solid var(--border);border-radius:4px;background:var(--bg3);color:var(--text2);cursor:pointer;white-space:nowrap}
+.btn:hover{background:var(--bg4);color:var(--text)}
+.btn.green{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.warn{border-color:var(--warn);color:var(--warn)}
+.btn.warn:hover{background:var(--warn);color:#fff}
+.btn.active{border-color:var(--accent);color:var(--text);background:color-mix(in srgb,var(--accent) 14%, var(--bg3))}
+.sep{width:1px;height:16px;background:var(--border);margin:0 4px}
+.section{padding:.65rem;border-bottom:1px solid var(--border)}
+.title{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.09em;margin-bottom:.45rem}
+.db-list{overflow:auto}
+.db-list.db-list--files{max-height:260px}
+.db-filter-row{display:flex;gap:4px;flex-wrap:wrap;padding:.4rem .65rem .3rem;border-bottom:1px solid var(--border);background:var(--bg2)}
+.db-filter-row input,.db-filter-row select{font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);min-width:0}
+.db-filter-row input[type="text"]{flex:1;min-width:60px}
+.db-filter-row input[type="number"]{width:52px}
+.db-filter-row select{width:90px}
+.db-filter-clear{font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg3);color:var(--text3);cursor:pointer;white-space:nowrap}
+.db-filter-clear:hover{color:var(--text);background:var(--bg4)}
+.db-tree-order{display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:.3rem .65rem;border-bottom:1px solid var(--border);background:var(--bg2)}
+.db-tree-order label{font-size:10px;color:var(--text3);display:flex;gap:3px;align-items:center}
+.db-tree-order select{font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);max-width:88px}
+.db-tree{padding:.2rem 0}
+.db-tree-node{margin-left:10px}
+.db-tree-head{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text2);padding:2px 6px;cursor:pointer;user-select:none}
+.db-tree-head:hover{background:var(--bg3)}
+.db-tree-tri{display:inline-block;width:10px;color:var(--text3)}
+.db-tree-key{font-weight:600;color:var(--text)}
+.db-tree-meta{margin-left:auto;color:var(--text3)}
+.db-meta-edit{font-size:10px;color:var(--accent);cursor:pointer;text-decoration:underline;margin-left:4px}
+.db-list.db-list--scroll{min-height:72px;max-height:min(280px,40vh)}
+.db-folder{margin-bottom:10px}
+.db-folder>.title{font-size:10px;color:var(--text3);text-transform:none;letter-spacing:0;padding:.2rem .35rem .35rem}
+.db-item{padding:.45rem .65rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px}
+.db-item:hover{background:var(--bg3)}
+.db-item-actions{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
+.db-item-actions .btn{cursor:pointer;padding:2px 6px;font-size:10px}
+.db-meta{font-size:10px;color:var(--text3)}
+.empty{padding:.75rem;color:var(--text3);font-style:italic;text-align:center}
+.content{padding:.9rem;overflow:auto;display:flex;flex-direction:column;gap:9px}
+.panel{border:1px solid var(--border);border-radius:8px;background:var(--bg2)}
+.panel-head{padding:.55rem .75rem;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.panel-title{font-size:12px;color:var(--text2)}
+.panel-body{padding:.65rem .75rem}
+.drop-zone{border:1.5px dashed var(--border);border-radius:8px;padding:1rem;text-align:center;cursor:pointer}
+.drop-zone:hover,.drop-zone.drag{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 12%, var(--bg2))}
+.sample-list{display:flex;flex-direction:column;gap:5px}
+.sample-item{border:1px solid var(--border);border-radius:6px;background:var(--bg3);padding:.45rem}
+.sample-row{display:flex;align-items:center;gap:6px}
+.sample-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sample-meta{font-size:11px;color:var(--text3)}
+.ctrl-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.num{width:70px;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);text-align:right}
+.layout{display:grid;grid-template-columns:1fr;gap:8px}
+.layout.lr{grid-template-columns:1fr 1fr}
+.samples-charts-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.charts-column{display:flex;flex-direction:column;gap:9px;min-width:0;flex:1;min-height:0}
+.samples-bottom{flex-shrink:0;max-height:min(42vh,520px);overflow:auto;border-top:1px solid var(--border);padding-top:8px}
+.samples-bottom .panel{margin:0}
+.outer-seg-row{display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:11px}
+.outer-seg-row:last-child{border-bottom:none}
+.outer-seg-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:4px 6px;margin-top:4px;grid-column:1/-1}
+.outer-seg-fields label{font-size:10px;color:var(--text3);display:flex;flex-direction:column;gap:2px}
+.outer-seg-fields input[type="color"]{width:100%;height:26px;padding:0;border:1px solid var(--border);border-radius:4px;cursor:pointer;background:var(--bg)}
+.num-wide{width:100%;min-width:0}
+.combine-controls{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin-bottom:8px}
+.combine-controls label{font-size:10px;color:var(--text3);display:flex;flex-direction:column;gap:2px}
+.canvas-box{height:420px}
+.canvas-box-sm{height:300px}
+.xrd-canvas-wrap{width:100%;min-width:0;height:420px;position:relative}
+.xrd-controls{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:flex-end;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.xrd-controls label{font-size:10px;color:var(--text3);display:flex;flex-direction:column;gap:2px}
+.legend-format-row{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin-bottom:8px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg2)}
+.legend-format-label{font-size:10px;color:var(--text3);font-weight:600;margin-right:2px}
+.legend-format-row label.legend-part{font-size:11px;color:var(--text2);display:inline-flex;align-items:center;gap:4px;cursor:pointer;user-select:none}
+.xrd-trace-list{max-height:min(200px,28vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px;margin-bottom:8px}
+.combine-select-hint{font-size:11px;color:var(--text2);background:color-mix(in srgb,var(--accent) 10%,var(--bg3));border:1px solid var(--border);border-radius:6px;padding:.5rem .65rem;margin-bottom:8px;line-height:1.45}
+.outer-combine-layout{display:flex;flex-direction:column;gap:12px;min-width:0;width:100%}
+.outer-combine-side{min-width:0;max-height:min(420px,50vh);overflow:auto}
+.combine-canvas-wrap{width:100%;min-width:0;height:420px;position:relative}
+.export-btns{display:inline-flex;gap:4px;align-items:center;margin-left:6px}
+.export-btns .btn{font-size:10px;padding:2px 8px}
+.seg-list{max-height:min(220px,36vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px}
+.seg-item{padding:.35rem 0;font-size:11px}
+.seg-item:last-child{border-bottom:none}
+details.seg-acc{border:1px solid var(--border);border-radius:6px;background:var(--bg3);margin-bottom:6px}
+details.seg-acc:last-child{margin-bottom:0}
+details.seg-acc summary{cursor:pointer;padding:.42rem .5rem;font-size:11px;list-style:none;display:flex;align-items:center;gap:8px;user-select:none;flex-wrap:wrap;justify-content:space-between}
+.seg-acc-title{font-weight:600;color:var(--text2)}
+.seg-row-mini{font-size:11px;padding:.25rem 0;gap:8px}
+.sample-seg-block{margin-top:8px;padding-top:6px;border-top:1px solid var(--border)}
+details.sample-thermal-acc{margin-top:8px}
+details.sample-thermal-acc>.seg-acc-body{padding-top:4px}
+details.seg-acc summary::-webkit-details-marker{display:none}
+details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
+.seg-acc-body{padding:.45rem .5rem .55rem}
+.series-item{padding:.45rem .65rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px}
+.series-item:hover{background:var(--bg3)}
+.series-item.active{background:color-mix(in srgb, var(--accent) 18%, var(--bg3))}
+.txt-sm{width:100%;font-size:11px;padding:4px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)}
+.toast{position:fixed;right:16px;bottom:16px;z-index:2147483000;max-width:min(96vw,440px);background:var(--bg4);border:1px solid var(--border);box-shadow:0 4px 24px rgba(0,0,0,.18);padding:.5rem .85rem;border-radius:6px;font-size:11px;line-height:1.35;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none;white-space:pre-wrap;word-break:break-word}
+.toast.show{opacity:1;transform:translateY(0)}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:.2s}
+.modal-bg.show{opacity:1;pointer-events:auto}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:8px;min-width:320px;padding:1rem}
+.txt{width:100%;font-size:12px;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);margin-bottom:.55rem}
+@media (max-width:1000px){.layout.lr{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sidebar">
+    <div class="section">
+      <div class="title">DB File Cache</div>
+      <div class="ctrl-row">
+        <button class="btn green" onclick="document.getElementById('fileIn').click()">+ Load</button>
+        <button class="btn" onclick="clearDbFiles()">Clear</button>
+      </div>
+      <div class="ctrl-row" style="margin-top:5px">
+        <button class="btn" onclick="exportFullDb()">DB Export</button>
+        <button class="btn" onclick="document.getElementById('dbIn').click()">DB Import</button>
+      </div>
+    </div>
+    <div class="db-filter-row" id="dbFilterRow">
+      <input type="text" id="dbFilterText" placeholder="Name / sample" oninput="applyDbFileFilter()" title="Search by file name or sample label">
+      <input type="text" id="dbFilterTags" placeholder="Tags (comma)" oninput="applyDbFileFilter()" title="Filter by tags (comma separated)">
+      <input type="number" id="dbFilterTempMin" placeholder="T≥" step="1" oninput="applyDbFileFilter()" title="Minimum temperature (°C)">
+      <input type="number" id="dbFilterTempMax" placeholder="T≤" step="1" oninput="applyDbFileFilter()" title="Maximum temperature (°C)">
+      <select id="dbFilterSort" onchange="applyDbFileFilter()" title="Sort">
+        <option value="name-asc">Name ↑</option>
+        <option value="name-desc">Name ↓</option>
+        <option value="temp-asc">Temp ↑</option>
+        <option value="temp-desc">Temp ↓</option>
+        <option value="date-asc">Date ↑</option>
+        <option value="date-desc">Date ↓</option>
+      </select>
+      <button class="db-filter-clear" onclick="clearDbFileFilter()" title="Clear filters">✕</button>
+    </div>
+    <div class="db-tree-order">
+      <span style="font-size:10px;color:var(--text3)">Tree:</span>
+      <label>1<select id="dbTreeLevel1" onchange="applyDbTreeOrder()"></select></label>
+      <label>2<select id="dbTreeLevel2" onchange="applyDbTreeOrder()"></select></label>
+      <label>3<select id="dbTreeLevel3" onchange="applyDbTreeOrder()"></select></label>
+      <label>4<select id="dbTreeLevel4" onchange="applyDbTreeOrder()"></select></label>
+      <label>5<select id="dbTreeLevel5" onchange="applyDbTreeOrder()"></select></label>
+      <label>6<select id="dbTreeLevel6" onchange="applyDbTreeOrder()"></select></label>
+      <label>7<select id="dbTreeLevel7" onchange="applyDbTreeOrder()"></select></label>
+    </div>
+    <div id="dbFileList" class="db-list db-list--files"><div class="empty">No files in cache</div></div>
+    <div class="section">
+      <div class="title">Projects</div>
+      <div style="font-size:9px;color:var(--text3);margin:-2px 0 4px">Set folder when saving or via Edit in the list (e.g. Lab/2025/Q1)</div>
+      <div class="ctrl-row">
+        <button class="btn green" onclick="openSaveModal()">+ Save Project</button>
+        <button class="btn" onclick="clearDbProjects()">Clear</button>
+      </div>
+    </div>
+    <div id="dbProjectList" class="db-list db-list--scroll" style="flex:1;min-height:100px"><div class="empty">No saved projects</div></div>
+    <div class="section">
+      <div class="title">Thermal series (DB)</div>
+      <div style="font-size:9px;color:var(--text3);margin:-2px 0 4px">Name and folder on Save/Edit. Use slashes for subfolders.</div>
+      <div class="ctrl-row">
+        <button class="btn green" onclick="openSeriesDbModal()">+ Save series</button>
+      </div>
+    </div>
+    <div id="dbThermalSeriesList" class="db-list db-list--scroll" style="max-height:min(220px,40vh);min-height:72px"><div class="empty">No saved series</div></div>
+  </div>
+
+  <div class="main">
+    <div id="appNotice" class="app-notice" role="status" aria-live="polite"></div>
+    <div class="topbar">
+      <span class="brand">XRD Analyzer DB TH v8</span>
+      <button class="btn" onclick="document.getElementById('fileIn').click()">Load Files</button>
+      <button class="btn" onclick="openSaveModal()">Save Project</button>
+      <button class="btn" onclick="exportProjectJson()">Export JSON</button>
+      <button class="btn" onclick="document.getElementById('projectIn').click()">Import JSON</button>
+      <button class="btn" onclick="exportDataJson()">Export Data</button>
+      <button class="btn" id="themeToggleBtn" onclick="toggleTheme()">Theme: White</button>
+      <div class="sep"></div>
+      <button class="btn" onclick="exportXrdChart('png')">XRD PNG</button>
+      <button class="btn" onclick="exportXrdChart('pdf')">XRD PDF</button>
+      <button class="btn" onclick="exportThermalChart('png')">Thermal PNG</button>
+      <button class="btn" onclick="exportThermalChart('pdf')">Thermal PDF</button>
+      <button class="btn" onclick="exportCombineChart('png')">Combine PNG</button>
+      <button class="btn" onclick="exportCombineChart('pdf')">Combine PDF</button>
+      <input type="file" id="fileIn" accept=".ras,.scn,.xrdml,.hdf5" multiple style="display:none">
+      <input type="file" id="projectIn" accept=".json" style="display:none">
+      <input type="file" id="dataIn" accept=".json" style="display:none">
+      <input type="file" id="dbIn" accept=".json" style="display:none">
+    </div>
+
+    <div class="content">
+      <div class="panel">
+        <div class="panel-body">
+          <div id="dropZone" class="drop-zone">
+            Drag &amp; drop <code>.ras</code> / <code>.scn</code> / <code>.xrdml</code> / <code>.hdf5</code> files here, or click to select
+          </div>
+        </div>
+      </div>
+
+      <div class="samples-charts-col">
+        <div class="charts-column">
+      <div id="mainLayout" class="layout">
+        <div class="panel" id="xrdPanel">
+          <div class="panel-head">
+            <span class="panel-title">XRD Pattern</span>
+            <div class="ctrl-row">
+              <span>Mode</span>
+              <button class="btn" onclick="setXrdMode('overlay')">Overlay</button>
+              <button class="btn" onclick="setXrdMode('stack')">Stack</button>
+              <span>Offset%</span>
+              <input class="num" id="offsetInput" type="number" step="5" value="30" oninput="redrawXrd()">
+              <span>Offset mode</span>
+              <button class="btn" id="offsetModeBtn" onclick="toggleXrdOffsetMode()">Equal</button>
+              <span>Gain mode</span>
+              <button class="btn" id="gainModeBtn" onclick="toggleXrdGainMode()">Equal</button>
+              <span>Gain%</span>
+              <input class="num" id="globalGainInput" type="number" step="5" value="100" min="1" oninput="redrawXrd()">
+              <span class="export-btns">
+                <button type="button" class="btn" onclick="exportXrdChart('png')">PNG</button>
+                <button type="button" class="btn" onclick="exportXrdChart('pdf')">PDF</button>
+              </span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="xrd-controls">
+              <label>Data source<select class="txt-sm" id="xrdSourceMode" onchange="setXrdSourceMode(this.value)"><option value="all">All samples</option><option value="series">Active series</option></select></label>
+              <label>Height (px)<input class="num" id="xrdChartHeight" type="number" min="200" max="1200" step="20" value="420" oninput="applyXrdChartLayout()"></label>
+              <label><span id="xAxisMinLbl">2θ min</span><input class="num" id="xMin" type="number" step="0.5" value="2" oninput="redrawXrd()"></label>
+              <label><span id="xAxisMaxLbl">2θ max</span><input class="num" id="xMax" type="number" step="0.5" value="32" oninput="redrawXrd()"></label>
+              <label>Y min<input class="num" id="xrdYMin" type="number" step="10" placeholder="auto" oninput="redrawXrd()"></label>
+              <label>Y max<input class="num" id="xrdYMax" type="number" step="10" placeholder="auto" oninput="redrawXrd()"></label>
+              <label>X mode<select class="txt-sm" id="xrdXAxisMode" onchange="setXrdXAxisMode(this.value)"><option value="2theta">2theta (deg)</option><option value="d">d (nm)</option><option value="nm-1">nm^-1</option></select></label>
+              <label>X-axis label<input class="txt-sm" id="xrdXTitle" type="text" value="2theta (deg)" oninput="redrawXrd()"></label>
+              <label>Y-axis label<input class="txt-sm" id="xrdYTitle" type="text" value="Intensity (cps)" oninput="redrawXrd()"></label>
+            </div>
+            <div class="title" style="margin-bottom:4px">Traces (legend &amp; color)</div>
+            <div class="legend-format-row" id="legendFormatUi"></div>
+            <div class="xrd-trace-list" id="xrdTraceList"></div>
+            <div class="xrd-canvas-wrap" id="xrdCanvasWrap">
+              <canvas id="xrdCanvas"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" id="thermalPanel">
+          <div class="panel-head">
+            <span class="panel-title">Thermal History</span>
+            <div class="ctrl-row">
+              <span>Mode</span>
+              <button class="btn" id="thermalModePerBtn" onclick="setThermalViewMode('per')">Per file</button>
+              <button class="btn" id="thermalModeSeriesBtn" onclick="setThermalViewMode('series')">Series</button>
+              <select class="txt-sm" id="thermalSeriesSelect" style="max-width:160px" onchange="setActiveThermalSeriesId(this.value)"></select>
+              <button class="btn" onclick="openSeriesEditorModal()">Edit series</button>
+              <button class="btn" onclick="createSeriesFromAllSamples()">Series from all</button>
+              <span>Unit</span>
+              <button class="btn" onclick="setUnit('date')">date</button>
+              <button class="btn" onclick="setUnit('sec')">sec</button>
+              <button class="btn" onclick="setUnit('min')">min</button>
+              <button class="btn" onclick="setUnit('hour')">hour</button>
+              <span class="export-btns">
+                <button type="button" class="btn" onclick="exportThermalChart('png')">PNG</button>
+                <button type="button" class="btn" onclick="exportThermalChart('pdf')">PDF</button>
+              </span>
+            </div>
+          </div>
+          <div id="thermalStatus" style="font-size:10px;color:var(--text3);padding:0 .75rem .35rem"></div>
+          <div class="panel-body canvas-box-sm">
+            <canvas id="thermalCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="combinePanel">
+        <div class="panel-head">
+          <div>
+            <span class="panel-title">Combine (2θ vs intensity)</span>
+            <div style="font-size:10px;color:var(--text3);margin-top:3px">Combine does not depend on a series. You can freely select traces from samples[] and overlay XRD data. Axis from XRD Pattern.</div>
+          </div>
+          <span class="export-btns">
+            <button type="button" class="btn" onclick="exportCombineChart('png')">PNG</button>
+            <button type="button" class="btn" onclick="exportCombineChart('pdf')">PDF</button>
+          </span>
+        </div>
+        <div class="panel-body outer-combine-layout">
+          <div class="outer-combine-side">
+            <div class="combine-select-hint">Combine is independent from series. You can freely pick traces from samples[] and even mix samples imported from multiple projects.</div>
+            <div class="combine-controls">
+              <label>Combine<select class="txt-sm" id="combineSelect" onchange="setActiveCombineId(this.value)"></select></label>
+              <label>Name<input class="txt-sm" id="combineNameInput" type="text" placeholder="Combine name" onchange="setActiveCombineName(this.value)"></label>
+              <button type="button" class="btn green" onclick="addNewCombine()">+ New</button>
+              <button type="button" class="btn" onclick="addCombineFromSeries()">+ From series</button>
+              <button type="button" class="btn warn" onclick="deleteActiveCombine()">Delete</button>
+              <label>Height (px)<input class="num" id="outerChartHeight" type="number" min="200" max="1200" step="20" value="420" oninput="applyOuterChartLayout()"></label>
+            </div>
+            <div class="title" style="margin-bottom:4px">Traces - select samples to add</div>
+            <div id="combineSamplePicker" style="max-height:min(160px,22vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:4px 6px;margin-bottom:6px;font-size:11px"></div>
+            <div class="title" style="margin-bottom:4px">Trace settings</div>
+            <div class="seg-list" id="outerSegList"></div>
+          </div>
+          <div class="combine-canvas-wrap" id="combineCanvasWrap">
+            <canvas id="outerCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+        </div>
+        <div class="samples-bottom">
+          <div class="panel">
+            <div class="panel-head">
+              <span class="panel-title">Samples</span>
+              <div class="ctrl-row">
+                <span>Layout</span>
+                <button class="btn" onclick="setLayout('tb')">Top/Bottom</button>
+                <button class="btn" onclick="setLayout('lr')">Left/Right</button>
+                <button class="btn" onclick="setLayout('xrd')">XRD only</button>
+                <button class="btn" onclick="setLayout('thermal')">Thermal only</button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div id="sampleList" class="sample-list"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="saveModal" class="modal-bg">
+  <div class="modal">
+    <div style="font-size:13px;margin-bottom:.7rem">Save Project</div>
+    <input class="txt" id="projectName" placeholder="Project name">
+    <input class="txt" id="projectFolderInput" placeholder="Folder (e.g. Lab/2025/Q1 — empty = root)">
+    <input class="txt" id="projectTags" placeholder="Tags (comma separated)">
+    <div class="ctrl-row" style="justify-content:flex-end">
+      <button class="btn" onclick="closeSaveModal()">Cancel</button>
+      <button class="btn green" onclick="confirmSaveProject()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="projectMetaModal" class="modal-bg">
+  <div class="modal">
+    <div style="font-size:13px;margin-bottom:.6rem">Edit project (name / folder)</div>
+    <input type="hidden" id="projectMetaId">
+    <input class="txt" id="projectMetaName" placeholder="Project name">
+    <input class="txt" id="projectMetaFolder" placeholder="Folder A/B/C (empty = root)">
+    <div class="ctrl-row" style="justify-content:flex-end;margin-top:.5rem">
+      <button class="btn" onclick="closeProjectMetaModal()">Cancel</button>
+      <button class="btn green" onclick="confirmProjectMeta()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="seriesEditorModal" class="modal-bg">
+  <div class="modal" style="min-width:420px;max-width:92vw;max-height:85vh;overflow:auto">
+    <div style="font-size:13px;margin-bottom:.6rem">Thermal series</div>
+    <div class="ctrl-row" style="margin-bottom:.5rem;flex-wrap:wrap">
+      <input class="txt" id="seriesEditName" placeholder="Series name" style="margin-bottom:0;flex:1;min-width:140px">
+      <input class="txt" id="seriesEditFolder" placeholder="Folder A/B" style="margin-bottom:0;flex:1;min-width:120px">
+      <button class="btn green" onclick="createOrUpdateSeriesFromEditor()">Apply</button>
+    </div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:.4rem">Order = segment order (top first). Check samples to include.</div>
+    <div id="seriesEditorMemberList"></div>
+    <div class="ctrl-row" style="justify-content:flex-end;margin-top:.75rem">
+      <button class="btn" onclick="closeSeriesEditorModal()">Close</button>
+    </div>
+  </div>
+</div>
+<div id="seriesDbModal" class="modal-bg">
+  <div class="modal">
+    <div style="font-size:13px;margin-bottom:.6rem">Save thermal series to DB</div>
+    <input class="txt" id="seriesDbName" placeholder="Name for DB">
+    <input class="txt" id="seriesDbFolder" placeholder="Folder A/B (empty = root)">
+    <div class="ctrl-row" style="justify-content:flex-end;margin-top:.5rem">
+      <button class="btn" onclick="closeSeriesDbModal()">Cancel</button>
+      <button class="btn green" onclick="confirmSaveSeriesToDb()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="fileMetaEditModal" class="modal-bg">
+  <div class="modal">
+    <div style="font-size:13px;margin-bottom:.6rem">Edit file metadata</div>
+    <input type="hidden" id="fileMetaEditId">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:.35rem" id="fileMetaEditLabel"></div>
+    <label style="font-size:11px;display:block;margin-bottom:.4rem">Sample label (optional)<input class="txt" id="fileMetaEditSampleLabel" placeholder="e.g. PPP_batch3" style="margin-top:2px"></label>
+    <label style="font-size:11px;display:block;margin-bottom:.4rem">Tags (comma separated)<input class="txt" id="fileMetaEditTags" placeholder="e.g. LN2,pre-anneal,batchA" style="margin-top:2px"></label>
+    <label style="font-size:11px;display:block;margin-bottom:.4rem">Capillary size mm (optional)<input class="txt" id="fileMetaEditCapillarySize" type="number" step="0.001" placeholder="e.g. 0.300" style="margin-top:2px"></label>
+    <label style="font-size:11px;display:block;margin-bottom:.4rem">Measurement time min (auto if start/end set)<input class="txt" id="fileMetaEditMeasurementTime" type="number" step="0.01" placeholder="e.g. 15.5" style="margin-top:2px"></label>
+    <label style="font-size:11px;display:block;margin-bottom:.4rem">Meas. start (optional)<input class="txt" id="fileMetaEditMeasStart" type="datetime-local" style="margin-top:2px"></label>
+    <label style="font-size:11px;display:block;margin-bottom:.4rem">Meas. end (optional)<input class="txt" id="fileMetaEditMeasEnd" type="datetime-local" style="margin-top:2px"></label>
+    <label style="font-size:11px;display:block;margin-bottom:.4rem">Temperature °C (blank = auto from filename)<input class="txt" id="fileMetaEditTempC" type="number" step="0.1" placeholder="e.g. 25.0" style="margin-top:2px"></label>
+    <div class="ctrl-row" style="justify-content:flex-end;margin-top:.5rem">
+      <button class="btn" onclick="closeFileMetaEditModal()">Cancel</button>
+      <button class="btn green" onclick="confirmFileMetaEdit()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="seriesMetaModal" class="modal-bg">
+  <div class="modal">
+    <div style="font-size:13px;margin-bottom:.6rem">Edit series in DB (name / folder)</div>
+    <input type="hidden" id="seriesMetaId">
+    <input class="txt" id="seriesMetaName" placeholder="Series name">
+    <input class="txt" id="seriesMetaFolder" placeholder="Folder A/B/C (empty = root)">
+    <div class="ctrl-row" style="justify-content:flex-end;margin-top:.5rem">
+      <button class="btn" onclick="closeSeriesMetaModal()">Cancel</button>
+      <button class="btn green" onclick="confirmSeriesMeta()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="fileFolderModal" class="modal-bg">
+  <div class="modal">
+    <div style="font-size:13px;margin-bottom:.6rem">File folder (cache)</div>
+    <input type="hidden" id="fileFolderMetaId">
+    <div style="font-size:11px;color:var(--text3);margin-bottom:.35rem" id="fileFolderMetaLabel"></div>
+    <input class="txt" id="fileFolderMetaPath" placeholder="Folder A/B (empty = root)">
+    <div class="ctrl-row" style="justify-content:flex-end;margin-top:.5rem">
+      <button class="btn" onclick="closeFileFolderModal()">Cancel</button>
+      <button class="btn green" onclick="confirmFileFolderMeta()">Save</button>
+    </div>
+  </div>
+</div>
+<div id="toast" class="toast"></div>
+
+<script>
+const COLORS=['#378ADD','#1D9E75','#D85A30','#7F77DD','#D4537E','#639922','#BA7517','#E24B4A'];
+const openSegmentAcc=new Set();
+const openSampleThermalAcc=new Set();
+let samples=[];let xrdChart=null;let thermalChart=null;let outerChart=null;
+let xrdMode='overlay',layout='tb',timeUnit='sec';
+let outerChartHeight=420;
+let xrdChartHeight=420;
+let xrdSourceMode='all'; // all | series
+let xrdHiddenByKey=new Map();
+let xrdTraceTreeGroups={};
+let xrdTraceTreeNodeChecks={};
+let outerHiddenByKey=new Map();
+let xrdOffsetMode='equal',xrdGainMode='equal';
+let xrdXAxisMode='2theta'; // 2theta | d | nm-1
+const LEGEND_FORMAT_OPTIONS=[
+  {id:'sample',label:'Sample name'},
+  {id:'measStart',label:'Meas. start time'},
+  {id:'measTime',label:'Meas. time'},
+  {id:'temp',label:'Temp'},
+  {id:'filename',label:'Filename'}
+];
+let legendFormatParts=['filename'];
+let dbFiles=[],dbProjects=[],dbThermalSeries=[],toastTimer=null;
+let dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',dateFrom:'',dateTo:'',sort:'name-asc'};
+const DB_TREE_FIELDS=['sample','capillary','measTime','measStart','measEnd','date','temp'];
+let dbTreeOrder=['sample','capillary','measStart','measEnd','measTime','date','temp'];
+let dbTreeCollapsed={};
+let uiTheme='light';
+let thermalViewMode='per';
+let thermalSeriesList=[];
+let activeThermalSeriesId=null;
+let combineList=[]; // {id, name, seriesId}
+let activeCombineId=null;
+let seriesEditorTargetId=null;
+let seriesDraftOrder=[];
+
+const DB_NAME='xrd_analyzer_db_th';
+const DB_VERSION=3;
+
+class IndexedDBAdapter{
+  constructor(){this.db=null;}
+  async open(){
+    if(this.db)return this.db;
+    return new Promise((res,rej)=>{
+      const req=indexedDB.open(DB_NAME,DB_VERSION);
+      req.onupgradeneeded=e=>{
+        const db=e.target.result;
+        if(!db.objectStoreNames.contains('files'))db.createObjectStore('files',{keyPath:'id',autoIncrement:true});
+        if(!db.objectStoreNames.contains('projects'))db.createObjectStore('projects',{keyPath:'id',autoIncrement:true});
+        if(!db.objectStoreNames.contains('thermalSeries'))db.createObjectStore('thermalSeries',{keyPath:'id',autoIncrement:true});
+      };
+      req.onsuccess=e=>{this.db=e.target.result;res(this.db);};
+      req.onerror=e=>rej(e.target.error);
+    });
+  }
+  /** Resolve when the transaction has finished (commit/abort), not only the first request callback — avoids read-after-write races with refreshDbPanels. */
+  async tx(store,mode,fn){
+    const db=await this.open();
+    return new Promise((res,rej)=>{
+      let req;
+      try{
+        const tx=db.transaction(store,mode);
+        const st=tx.objectStore(store);
+        req=fn(st);
+      }catch(err){rej(err);return;}
+      if(!req){rej(new Error('IDB: no request'));return;}
+      let settled=false;
+      const ok=()=>{if(settled)return;settled=true;res(req.result);};
+      const bad=err=>{if(settled)return;settled=true;rej(err||new Error('IDB transaction failed'));};
+      req.onerror=()=>bad(req.error);
+      const idbTx=req.transaction;
+      idbTx.onerror=()=>bad(idbTx.error);
+      idbTx.onabort=()=>bad(idbTx.error||new DOMException('aborted','AbortError'));
+      idbTx.oncomplete=ok;
+    });
+  }
+  /** Cursor read so `id` is always set from primaryKey (some getAll() paths omit inline keys). */
+  async listAllWithKeys(storeName){
+    const db=await this.open();
+    return new Promise((res,rej)=>{
+      const out=[];
+      const tx=db.transaction(storeName,'readonly');
+      const st=tx.objectStore(storeName);
+      const rq=st.openCursor();
+      rq.onsuccess=e=>{
+        const c=e.target.result;
+        if(!c)return;
+        const v=c.value;
+        if(v&&typeof v==='object'){
+          const pk=c.primaryKey;
+          out.push({...v,id:v.id!=null&&v.id!==''?v.id:pk});
+        }
+        c.continue();
+      };
+      rq.onerror=()=>rej(rq.error);
+      tx.onerror=()=>rej(tx.error);
+      tx.oncomplete=()=>res(out);
+    });
+  }
+  listFiles(){return this.listAllWithKeys('files');}
+  getFile(id){return this.tx('files','readonly',st=>st.get(id));}
+  saveFile(o){return this.tx('files','readwrite',st=>st.put({...o,savedAt:new Date().toISOString()}));}
+  deleteFile(id){return this.tx('files','readwrite',st=>st.delete(id));}
+  clearFiles(){return this.tx('files','readwrite',st=>st.clear());}
+  listProjects(){return this.listAllWithKeys('projects');}
+  getProject(id){return this.tx('projects','readonly',st=>st.get(id));}
+  saveProject(o){return this.tx('projects','readwrite',st=>st.put({...o,savedAt:new Date().toISOString()}));}
+  deleteProject(id){return this.tx('projects','readwrite',st=>st.delete(id));}
+  clearProjects(){return this.tx('projects','readwrite',st=>st.clear());}
+  listThermalSeries(){return this.listAllWithKeys('thermalSeries');}
+  getThermalSeries(id){return this.tx('thermalSeries','readonly',st=>st.get(id));}
+  saveThermalSeries(o){return this.tx('thermalSeries','readwrite',st=>st.put({...o,savedAt:new Date().toISOString()}));}
+  deleteThermalSeries(id){return this.tx('thermalSeries','readwrite',st=>st.delete(id));}
+  clearThermalSeries(){return this.tx('thermalSeries','readwrite',st=>st.clear());}
+}
+const adapter=new IndexedDBAdapter();
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  if(!t)return;
+  t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),4000);
+  try{console.info('[toast]',msg);}catch(_e){}
+}
+/** Diagnostics: always show file:// / iframe / CDN issues at top */
+function runEnvironmentChecks(){
+  const lines=[];
+  try{
+    if(window.top!==window.self)lines.push('Opened in an embedded frame (editor preview). DB and charts may not work — use an external browser.');
+  }catch(_e){lines.push('Cannot detect embedding (cross-origin).');}
+  if(location.protocol==='file:')lines.push('Opened via file://. For best results: (1) open this HTML directly in Chrome/Safari, or (2) run in the folder: python3 -m http.server 8765 then open http://127.0.0.1:8765/xrd_analyzer_db_TH_v4.html');
+  if(typeof Chart==='undefined')lines.push('Chart.js failed to load (CDN blocked or offline). Charts will not render.');
+  if(typeof indexedDB==='undefined')lines.push('IndexedDB unavailable — DB cache disabled.');
+  const el=document.getElementById('appNotice');
+  if(!el)return;
+  if(!lines.length){el.textContent='';el.classList.remove('app-notice--on');return;}
+  el.textContent=lines.join('\n\n');
+  el.classList.add('app-notice--on');
+  try{console.warn('[XRD env]',lines.join(' | '));}catch(_e){}
+}
+function setTheme(theme){
+  uiTheme=theme==='dark'?'dark':'light';
+  document.body.classList.toggle('theme-dark',uiTheme==='dark');
+  const btn=document.getElementById('themeToggleBtn');
+  if(btn)btn.textContent=`Theme: ${uiTheme==='dark'?'Dark':'White'}`;
+  try{localStorage.setItem('xrd_th_theme',uiTheme);}catch(_e){}
+}
+function toggleTheme(){setTheme(uiTheme==='dark'?'light':'dark');}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function normalizeFolderPath(p){
+  if(p==null||String(p).trim()==='')return'';
+  return String(p).trim().replace(/\\/g,'/').replace(/\/+/g,'/').replace(/^\/+|\/+$/g,'');
+}
+/** Group DB rows by folderPath; sort folders path-wise then items by name. */
+function groupDbRecordsByFolder(records,folderKey='folderPath'){
+  if(!Array.isArray(records))return[];
+  const m=new Map();
+  for(const r of records){
+    if(!r||typeof r!=='object')continue;
+    const k=normalizeFolderPath(r[folderKey]);
+    if(!m.has(k))m.set(k,[]);
+    m.get(k).push(r);
+  }
+  const keys=[...m.keys()].sort((a,b)=>{
+    const pa=a?a.split('/'):[],pb=b?b.split('/'):[];
+    const n=Math.max(pa.length,pb.length);
+    for(let i=0;i<n;i++){
+      const ca=pa[i]??'',cb=pb[i]??'';
+      if(ca!==cb)return ca.localeCompare(cb,undefined,{numeric:true,sensitivity:'base'});
+    }
+    return 0;
+  });
+  return keys.map(k=>({folderKey:k,label:k?k:'(root)',items:(m.get(k)||[]).slice().sort((a,b)=>String(a&&a.name||'').localeCompare(String(b&&b.name||''),undefined,{numeric:true,sensitivity:'base'}))}));
+}
+function renderDbFolderGroups(groups,renderItem){
+  if(!Array.isArray(groups)||!groups.length)return'';
+  return groups.map(g=>{
+    const items=Array.isArray(g.items)?g.items:[];
+    return`<div class="db-folder"><div class="title">${esc(g.label||'(root)')}</div>${items.map(renderItem).join('')}</div>`;
+  }).join('');
+}
+/** If folder grouping fails, show a flat list so the sidebar never goes blank. */
+function renderDbListOrFlat(records,renderItem){
+  try{
+    if(!Array.isArray(records)||!records.length)return'';
+    const g=groupDbRecordsByFolder(records);
+    const html=renderDbFolderGroups(g,renderItem);
+    if(html&&html.trim())return html;
+  }catch(e){console.error('renderDbListOrFlat',e);}
+  return records.filter(Boolean).map(renderItem).join('');
+}
+function newSampleUid(){return(crypto.randomUUID?crypto.randomUUID():('s_'+Date.now()+'_'+Math.random().toString(36).slice(2,10)));}
+function ensureSampleUid(s){if(!s.sampleUid)s.sampleUid=newSampleUid();}
+function formatDatetimeLocalValue(d){
+  if(!d||isNaN(d.getTime()))return'';
+  const pad=n=>String(n).padStart(2,'0');
+  return`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+/** Datetime shown in sample row: manual override ISO, else RAS-parsed Date. */
+function thermalUiStartDate(s){
+  return s.thermalTimeStartOverride?new Date(s.thermalTimeStartOverride):(s.timeStart instanceof Date?s.timeStart:null);
+}
+function thermalUiEndDate(s){
+  return s.thermalTimeEndOverride?new Date(s.thermalTimeEndOverride):(s.timeEnd instanceof Date?s.timeEnd:null);
+}
+/** Effective T (°C): manual override, else filename default on sample. */
+function sampleThermalTempC(s){
+  if(s.thermalTempOverride!=null&&Number.isFinite(+s.thermalTempOverride))return+s.thermalTempOverride;
+  if(s.thermalTempStartOverride!=null&&Number.isFinite(+s.thermalTempStartOverride))return+s.thermalTempStartOverride;
+  if(Number.isFinite(s.tempStart))return s.tempStart;
+  if(Number.isFinite(s.tempSetPoint))return s.tempSetPoint;
+  return null;
+}
+function thermalUiTempStr(s){
+  const T=sampleThermalTempC(s);
+  return Number.isFinite(T)?String(T):'';
+}
+function parseTempFromFilename(fname){
+  if(!fname)return null;
+  const m=String(fname).match(/([+-]?\d+(?:\.\d+)?)\s*°?\s*C(?=\.|_|$|\s|#)/i);
+  return m&&Number.isFinite(parseFloat(m[1]))?parseFloat(m[1]):null;
+}
+function resolveSampleTemps(fname,opts={}){
+  let tempSetPoint=Number.isFinite(opts.tempSetPoint)?opts.tempSetPoint:null;
+  let tempStart=Number.isFinite(opts.tempStart)?opts.tempStart:null;
+  let tempEnd=Number.isFinite(opts.tempEnd)?opts.tempEnd:null;
+  const fn=parseTempFromFilename(fname);
+  if(tempSetPoint==null&&fn!=null)tempSetPoint=fn;
+  if(tempStart==null&&tempSetPoint!=null)tempStart=tempSetPoint;
+  if(tempEnd==null&&tempSetPoint!=null)tempEnd=tempSetPoint;
+  if(tempStart==null&&fn!=null)tempStart=fn;
+  if(tempEnd==null&&fn!=null)tempEnd=fn;
+  return{tempSetPoint,tempStart,tempEnd};
+}
+function parseDatetimeLocalToDate(str){
+  if(str==null||String(str).trim()==='')return null;
+  const d=new Date(str);
+  return isNaN(d.getTime())?null:d;
+}
+/** Measurement window: times from file/metadata; T from filename default or manual override (flat). */
+function getEffectiveThermal(s){
+  const t0=s.thermalTimeStartOverride?new Date(s.thermalTimeStartOverride):s.timeStart;
+  const t1=s.thermalTimeEndOverride?new Date(s.thermalTimeEndOverride):s.timeEnd;
+  const T=sampleThermalTempC(s);
+  if(!t0||!t1||!(t0 instanceof Date)||!(t1 instanceof Date)||isNaN(t0.getTime())||isNaN(t1.getTime()))return null;
+  if(!Number.isFinite(T))return null;
+  if(t1.getTime()<=t0.getTime())return null;
+  return{t0,t1,T0:T,T1:T};
+}
+function segmentUiForKind(s,kind){
+  const m=(s.segments||[]).find(x=>x.segType===kind||x.kind===kind);
+  return{
+    yOffset:m&&Number.isFinite(m.yOffset)?m.yOffset:0,
+    yGain:m&&Number.isFinite(m.yGain)&&m.yGain>0?m.yGain:1
+  };
+}
+/** Y value for thermal / outer plots (offset then gain). */
+function segmentYPlot(seg,y){
+  const g=(seg.yGain&&seg.yGain>0)?seg.yGain:1;
+  return (y+(seg.yOffset||0))*g;
+}
+function buildAbsoluteThermalSegments(s){
+  const eff=getEffectiveThermal(s);
+  if(!eff)return[];
+  const tMeas0=eff.t0.getTime(),tMeas1=eff.t1.getTime();
+  const out=[];
+  if(s.scanRate!=null&&s.rampStartTemp!=null&&Math.abs(s.scanRate)>1e-6){
+    const dT=eff.T0-s.rampStartTemp;
+    const rampSec=Math.abs(dT/s.scanRate)*60;
+    const tR0=tMeas0-rampSec*1000;
+    const ui=segmentUiForKind(s,'ramp');
+    out.push({t0:tR0,t1:tMeas0,y0:s.rampStartTemp,y1:eff.T0,kind:'ramp',yOffset:ui.yOffset,yGain:ui.yGain});
+  }
+  const uiM=segmentUiForKind(s,'measurement');
+  out.push({t0:tMeas0,t1:tMeas1,y0:eff.T0,y1:eff.T0,kind:'measurement',yOffset:uiM.yOffset,yGain:uiM.yGain});
+  return out;
+}
+function naturalKey(str){return str.split(/(\d+)/).map((s,i)=>i%2===0?s.toLowerCase():parseInt(s,10));}
+function naturalCompare(a,b){
+  const ka=naturalKey(a.name),kb=naturalKey(b.name);
+  for(let i=0;i<Math.max(ka.length,kb.length);i++){const ai=ka[i]??'',bi=kb[i]??'';if(ai<bi)return-1;if(ai>bi)return 1;}
+  return 0;
+}
+function naturalCompareSamples(a,b){
+  return naturalCompare({name:a.rawName||a.name||''},{name:b.rawName||b.name||''});
+}
+/** Rigaku SmartLab .ras: *MEAS_SCAN_*_TIME "MM/DD/YY HH:mm:ss"; also accepts ISO-like strings. */
+function parseDateTime(s){
+  if(!s)return null;
+  const t=String(s).trim();
+  const m=t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{1,2}):(\d{1,2})/);
+  if(m){
+    const mo=parseInt(m[1],10),dd=parseInt(m[2],10),yyStr=m[3];
+    const hh=parseInt(m[4],10),mi=parseInt(m[5],10),ss=parseInt(m[6],10);
+    const yy=parseInt(yyStr,10);
+    const year=yyStr.length===2&&!isNaN(yy)?(yy<=69?2000+yy:1900+yy):yy;
+    if(!Number.isFinite(year)||!Number.isFinite(mo)||!Number.isFinite(dd)||mo<1||mo>12||dd<1||dd>31)return null;
+    const d=new Date(year,mo-1,dd,hh,mi,ss);
+    return isNaN(d.getTime())?null:d;
+  }
+  const iso=new Date(t);
+  return isNaN(iso.getTime())?null:iso;
+}
+/** Estimate scan length (seconds) for thermal window when end time is missing or invalid. */
+function estimateScanDurationSec(opts,nPoints){
+  const n=Math.max(1,nPoints||1);
+  const ct=Number.isFinite(opts.countingTime)?opts.countingTime:null;
+  if(ct!=null&&ct>0)return ct*n;
+  const tps=Number.isFinite(opts.timePerStep)?opts.timePerStep:null;
+  if(tps!=null&&tps>0)return tps*n;
+  const sp=Number.isFinite(opts.scanSpeed)?opts.scanSpeed:null;
+  const ss=Number.isFinite(opts.scanStart)?opts.scanStart:null;
+  const se=Number.isFinite(opts.scanStop)?opts.scanStop:null;
+  if(sp!=null&&sp>0&&ss!=null&&se!=null){
+    const range=Math.abs(se-ss);
+    const unit=String(opts.scanSpeedUnit||'').toLowerCase();
+    if(unit.includes('min'))return(Math.max(range/sp,0.01))*60;
+    return Math.max(range/sp,1);
+  }
+  return Math.max(60,n);
+}
+function normalizeMeasurementWindow(timeStart,timeEnd,opts,nPoints){
+  let t0=timeStart instanceof Date&&!isNaN(timeStart.getTime())?timeStart:null;
+  let t1=timeEnd instanceof Date&&!isNaN(timeEnd.getTime())?timeEnd:null;
+  const durMs=estimateScanDurationSec(opts,nPoints)*1000;
+  if(t0&&!t1)t1=new Date(t0.getTime()+durMs);
+  else if(!t0&&t1)t0=new Date(t1.getTime()-durMs);
+  if(t0&&t1&&t1.getTime()<=t0.getTime())t1=new Date(t0.getTime()+durMs);
+  return{t0,t1};
+}
+/** Same thermal defaults for HDF5, RAS, XRDML, etc. */
+function applyThermalDefaultsToSample(s,fname,opts={}){
+  if(!s)return;
+  const fileTemps=resolveSampleTemps(fname,{
+    tempSetPoint:opts.tempSetPoint,tempStart:opts.tempStart,tempEnd:opts.tempEnd
+  });
+  if(s.thermalTempOverride==null){
+    if(fileTemps.tempSetPoint!=null)s.tempSetPoint=fileTemps.tempSetPoint;
+    if(fileTemps.tempStart!=null)s.tempStart=fileTemps.tempStart;
+    if(fileTemps.tempEnd!=null)s.tempEnd=fileTemps.tempEnd;
+    if(s.tempStart!=null&&s.tempEnd==null)s.tempEnd=s.tempStart;
+    if(s.tempSetPoint==null&&s.tempStart!=null)s.tempSetPoint=s.tempStart;
+  }
+  const meta=s.meta||{};
+  const win=normalizeMeasurementWindow(
+    s.thermalTimeStartOverride?new Date(s.thermalTimeStartOverride):(opts.timeStart??s.timeStart),
+    s.thermalTimeEndOverride?new Date(s.thermalTimeEndOverride):(opts.timeEnd??s.timeEnd),
+    {...meta,...opts,countingTime:opts.countingTime??meta.countingTime,timePerStep:opts.timePerStep??meta.timePerStep,
+      scanSpeed:opts.scanSpeed??meta.scanSpeed,scanSpeedUnit:opts.scanSpeedUnit??meta.scanSpeedUnit,
+      scanStart:opts.scanStart??meta.scanStart,scanStop:opts.scanStop??meta.scanStop},
+    s.tth?.length
+  );
+  if(!s.thermalTimeStartOverride&&win.t0)s.timeStart=win.t0;
+  if(!s.thermalTimeEndOverride&&win.t1)s.timeEnd=win.t1;
+  refreshSegmentsForSample(s);
+}
+/* parsers defined below */
+function ensureXrdControls(s){
+  if(!isFinite(s.xrdOffsetManual))s.xrdOffsetManual=0;
+  if(!isFinite(s.intensityGainManual)||s.intensityGainManual<=0)s.intensityGainManual=1;
+  if(s.xrdLegendLabel==null)s.xrdLegendLabel='';
+}
+function defaultFileLegend(s){
+  if(!s)return'';
+  if(s.rawName!=null&&String(s.rawName).trim())return String(s.rawName).trim();
+  return s.name!=null?String(s.name).trim():'';
+}
+function xrdDisplayLegend(s){return chartLegendForSample(s);}
+function xrdKey(s){return s?.sampleUid||s?.name||String(Math.random());}
+function outerKey(s,seg){return `${s?.sampleUid||s?.name||'sample'}::${seg?.segType||'seg'}::${seg?.label||''}::${seg?.idx??''}`;}
+function xrdVisibleSamples(){
+  const vis=samples.filter(s=>s.visible);
+  if(xrdSourceMode!=='series')return vis;
+  const ser=activeThermalSeriesId?thermalSeriesList.find(x=>x.id===activeThermalSeriesId):null;
+  if(!ser)return [];
+  const uidSet=new Set(ser.memberUids||[]);
+  return vis.filter(s=>uidSet.has(s.sampleUid));
+}
+function updateXrdModeButtons(){
+  const offsetBtn=document.getElementById('offsetModeBtn');
+  const gainBtn=document.getElementById('gainModeBtn');
+  const globalGain=document.getElementById('globalGainInput');
+  const offsetInput=document.getElementById('offsetInput');
+  if(offsetBtn)offsetBtn.textContent=xrdOffsetMode==='equal'?'Equal':'Manual';
+  if(gainBtn)gainBtn.textContent=xrdGainMode==='equal'?'Equal':'Manual';
+  if(globalGain)globalGain.disabled=xrdGainMode!=='equal';
+  if(offsetInput)offsetInput.disabled=xrdOffsetMode!=='equal';
+}
+function refreshSegmentsForSample(s){
+  const segs=[];let idx=0;
+  const eff=getEffectiveThermal(s);
+  if(eff){
+    const measSec=(eff.t1.getTime()-eff.t0.getTime())/1000;
+    if(s.scanRate!=null&&s.rampStartTemp!=null&&Math.abs(s.scanRate)>1e-6){
+      const dT=eff.T0-s.rampStartTemp;
+      const rampSec=Math.abs(dT/s.scanRate)*60;
+      segs.push({idx:idx++,label:'ramp',segType:'ramp',t0:-rampSec,t1:0,y0:s.rampStartTemp,y1:eff.T0,selectedOuter:false,visible:true,xOffset:0,yOffset:0,yGain:1,color:'',legendLabel:'',combineStackOffset:0});
+    }
+    segs.push({idx:idx++,label:'measurement',segType:'measurement',t0:0,t1:measSec,y0:eff.T0,y1:eff.T0,selectedOuter:false,visible:true,xOffset:0,yOffset:0,yGain:1,color:'',legendLabel:'',combineStackOffset:0});
+  }
+  const prev=new Map((s.segments||[]).map(x=>[x.label+'_'+x.segType,x]));
+  s.segments=segs.map(seg=>{
+    const p=prev.get(seg.label+'_'+seg.segType);
+    return p?{...seg,selectedOuter:!!p.selectedOuter,visible:p.visible!==false,xOffset:isFinite(p.xOffset)?p.xOffset:0,yOffset:isFinite(p.yOffset)?p.yOffset:0,yGain:(isFinite(p.yGain)&&p.yGain>0)?p.yGain:1,color:p.color||'',legendLabel:p.legendLabel||'',combineStackOffset:isFinite(p.combineStackOffset)?p.combineStackOffset:0}:seg;
+  });
+}
+function toUnit(sec){if(timeUnit==='min')return sec/60;if(timeUnit==='hour')return sec/3600;return sec;}
+function fromUnit(v){if(timeUnit==='min')return v*60;if(timeUnit==='hour')return v*3600;return v;}
+function thermalToX(ms,tRef){return timeUnit==='date'?ms:toUnit((ms-tRef)/1000);}
+function thermalXAxisTitle(){return timeUnit==='date'?'Time (date)':`Time (${timeUnit==='min'?'min':timeUnit==='hour'?'hour':'sec'})`;}
+function formatThermalXTick(v){
+  if(timeUnit!=='date')return v;
+  const d=new Date(v);
+  return isNaN(d.getTime())?'':d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+const THERMAL_BRIDGE_COLOR='#94a3b8';
+/** Connect flat-T windows; marker colors match each sample's XRD color (s.color). */
+function buildSimpleThermalPolyline(sampleList){
+  const effs=[];
+  (sampleList||[]).forEach(s=>{
+    if(s.visible===false)return;
+    const e=getEffectiveThermal(s);
+    if(e)effs.push({t0:e.t0.getTime(),t1:e.t1.getTime(),T:e.T0,color:s.color||'#4a9eff'});
+  });
+  if(!effs.length)return{pts:[],pointColors:[]};
+  const tRef=timeUnit==='date'?0:Math.min(...effs.map(e=>e.t0));
+  const pts=[],pointColors=[],eps=1e-6;
+  effs.forEach((e,i)=>{
+    const col=e.color;
+    const x0=thermalToX(e.t0,tRef),x1=thermalToX(e.t1,tRef);
+    if(!pts.length){
+      pts.push({x:x0,y:e.T});
+      pointColors.push(col);
+    }else{
+      const prev=effs[i-1];
+      const px=thermalToX(prev.t1,tRef);
+      const last=pts[pts.length-1];
+      if(Math.abs(last.x-px)>eps||Math.abs(last.y-prev.T)>eps){
+        pts.push({x:px,y:prev.T});
+        pointColors.push(THERMAL_BRIDGE_COLOR);
+      }
+      if(Math.abs(px-x0)>eps||Math.abs(prev.T-e.T)>eps){
+        pts.push({x:x0,y:e.T});
+        pointColors.push(THERMAL_BRIDGE_COLOR);
+      }
+    }
+    pts.push({x:x1,y:e.T});
+    pointColors.push(col);
+  });
+  return{pts,pointColors};
+}
+function buildThermalChartScales(yR={}){
+  const x={type:'linear',title:{display:true,text:thermalXAxisTitle()}};
+  if(timeUnit==='date')x.ticks={callback:v=>formatThermalXTick(v)};
+  return{x,y:{title:{display:true,text:'Temperature (°C)'},...yR}};
+}
+
+/* =====================================================================
+   Multi-format parsers
+   ===================================================================== */
+
+/* --- helper: extract quoted value from a RAS/header line ----------- */
+function _rasVal(line){return(line.match(/"([^"]+)"/)||[])[1]||null;}
+function _rasFloat(line){const v=parseFloat(_rasVal(line));return Number.isFinite(v)?v:null;}
+
+/** Rigaku SmartLab .ras — full metadata extraction */
+function parseRas(text,fname){
+  const lines=text.split(/\r?\n/);
+  let inData=false;
+  const tth=[],intensity=[];
+  /* --- thermal --- */
+  let tempStart=null,tempEnd=null,timeStart=null,timeEnd=null;
+  /* --- instrument / scan conditions --- */
+  let lambda=null,voltage=null,current=null,waveType=null;
+  let scanSpeed=null,scanSpeedUnit=null,scanStep=null,scanStart=null,scanStop=null,scanMode=null,scanAxis=null;
+  let goniometerName=null,attachmentName=null,counterName=null,sampleHolder=null;
+  let fileOperator=null,fileSample=null,fileComment=null,fileMemo=null;
+
+  for(const line of lines){
+    /* thermal */
+    if(line.includes('*ATMOSPHERE_TEMP_START')){tempStart=_rasFloat(line);}
+    if(line.includes('*ATMOSPHERE_TEMP_END')){tempEnd=_rasFloat(line);}
+    if(line.includes('*MEAS_SCAN_START_TIME'))timeStart=parseDateTime(_rasVal(line));
+    if(line.includes('*MEAS_SCAN_END_TIME'))timeEnd=parseDateTime(_rasVal(line));
+    /* wavelength */
+    if(line.includes('*HW_XG_WAVE_LENGTH_ALPHA1')){const v=_rasFloat(line);if(v)lambda=v;}
+    /* tube conditions */
+    if(line.includes('*MEAS_COND_XG_VOLTAGE')){voltage=_rasFloat(line);}
+    if(line.includes('*MEAS_COND_XG_CURRENT')){current=_rasFloat(line);}
+    if(line.includes('*MEAS_COND_XG_WAVE_TYPE')){waveType=_rasVal(line);}
+    /* scan params */
+    if(line.includes('*MEAS_SCAN_SPEED')&&!line.includes('UNIT')&&!line.includes('USER')){scanSpeed=_rasFloat(line);}
+    if(line.includes('*MEAS_SCAN_SPEED_UNIT')){scanSpeedUnit=_rasVal(line);}
+    if(line.includes('*MEAS_SCAN_STEP')){scanStep=_rasFloat(line);}
+    if(line.includes('*MEAS_SCAN_START')&&!line.includes('TIME')){scanStart=_rasFloat(line);}
+    if(line.includes('*MEAS_SCAN_STOP')){scanStop=_rasFloat(line);}
+    if(line.includes('*MEAS_SCAN_MODE')){scanMode=_rasVal(line);}
+    if(line.includes('*MEAS_SCAN_AXIS_X')&&!line.includes('INTERNAL')){scanAxis=_rasVal(line);}
+    /* hardware */
+    if(line.includes('*HW_GONIOMETER_NAME')){goniometerName=(_rasVal(line)||'').split('|')[1]||_rasVal(line);}
+    if(line.includes('*HW_ATTACHMENT_NAME')){attachmentName=(_rasVal(line)||'').split('|')[1]||_rasVal(line);}
+    if(line.includes('*HW_COUNTER_SELECT_NAME')){counterName=(_rasVal(line)||'').split('|')[1]||_rasVal(line);}
+    if(line.includes('*HW_SAMPLE_HOLDER_NAME')){sampleHolder=(_rasVal(line)||'').split('|')[1]||_rasVal(line);}
+    /* file info */
+    if(line.includes('*FILE_OPERATOR')){fileOperator=_rasVal(line);}
+    if(line.includes('*FILE_SAMPLE')){fileSample=_rasVal(line);}
+    if(line.includes('*FILE_COMMENT')){fileComment=_rasVal(line);}
+    if(line.includes('*FILE_MEMO')){fileMemo=_rasVal(line);}
+    /* data block */
+    if(line.includes('*RAS_INT_START')){inData=true;continue;}
+    if(line.includes('*RAS_INT_END'))break;
+    if(inData&&line.trim()&&!line.trim().startsWith('*')){
+      const p=line.trim().split(/\s+/);
+      if(p.length>=2){const x=parseFloat(p[0]),y=parseFloat(p[1]);if(!isNaN(x)&&!isNaN(y)){tth.push(x);intensity.push(y);}}
+    }
+  }
+  if(!tth.length)return null;
+  if(tempEnd==null&&tempStart!=null)tempEnd=tempStart;
+  const meta={
+    timeStart,timeEnd,lambda,
+    tempStart,tempEnd,tempSetPoint:tempStart,
+    voltage,current,waveType,
+    scanSpeed,scanSpeedUnit,scanStep,scanStart,scanStop,scanMode,scanAxis,
+    goniometerName,attachmentName,counterName,sampleHolder,
+    fileOperator,fileSample,fileComment,fileMemo,
+    instrument:'Rigaku SmartLab'
+  };
+  return _buildSample(fname.replace(/\.ras$/i,''),fname,tth,intensity,meta);
+}
+
+/** PowDLL / generic 2-column text .scn — data only */
+function parseSCN(text,fname){
+  const tth=[],intensity=[];
+  for(const line of text.split(/\r?\n/)){
+    const t=line.trim();
+    if(!t||t.startsWith('#')||t.startsWith(';')||t.startsWith('!')||t.startsWith("'"))continue;
+    const p=t.split(/[\s,;]+/);
+    if(p.length<2)continue;
+    const x=parseFloat(p[0]),y=parseFloat(p[1]);
+    if(!isNaN(x)&&!isNaN(y)){tth.push(x);intensity.push(y);}
+  }
+  if(!tth.length)return null;
+  return _buildSample(fname.replace(/\.scn$/i,''),fname,tth,intensity,{});
+}
+
+/** PANalytical XRDML (XML) — wavelength + timestamps + sample name */
+function parseXRDML(text,fname){
+  let doc;
+  try{doc=new DOMParser().parseFromString(text,'application/xml');}catch(e){return null;}
+  if(doc.querySelector('parsererror'))return null;
+
+  let lambda=1.5406;
+  const ka1=doc.querySelector('kAlpha1');
+  if(ka1?.textContent)lambda=parseFloat(ka1.textContent)||lambda;
+
+  let start=null,end=null;
+  for(const el of doc.querySelectorAll('positions')){
+    const ax=(el.getAttribute('axis')||'').toLowerCase();
+    if(ax.includes('2theta')||ax.includes('2th')){
+      start=parseFloat(el.querySelector('startPosition')?.textContent);
+      end=parseFloat(el.querySelector('endPosition')?.textContent);
+    }
+  }
+  const intEl=doc.querySelector('intensities');
+  if(!intEl)return null;
+  const vals=intEl.textContent.trim().split(/\s+/).map(Number).filter(v=>!isNaN(v));
+  if(!vals.length)return null;
+
+  /* timestamps (may be fake if converted by PowDLL) */
+  let timeStart=null,timeEnd=null;
+  const st=doc.querySelector('startTimeStamp')?.textContent;
+  const et=doc.querySelector('endTimeStamp')?.textContent;
+  if(st)try{const d=new Date(st);if(!isNaN(d))timeStart=d;}catch(_e){}
+  if(et)try{const d=new Date(et);if(!isNaN(d))timeEnd=d;}catch(_e){}
+  /* discard if identical (PowDLL sets both to conversion time) */
+  if(timeStart&&timeEnd&&timeStart.getTime()===timeEnd.getTime()){timeStart=null;timeEnd=null;}
+
+  /* counting time */
+  const ct=parseFloat(doc.querySelector('commonCountingTime')?.textContent);
+
+  const tth=[],intensity=[];
+  const n=vals.length;
+  if(isNaN(start)||isNaN(end)||n<2){vals.forEach((v,i)=>{tth.push(i);intensity.push(v);});}
+  else{const step=(end-start)/(n-1);vals.forEach((v,i)=>{tth.push(start+i*step);intensity.push(v);});}
+
+  const sampleName=doc.querySelector('sample > name')?.textContent.trim()||
+                   doc.querySelector('sample name')?.textContent.trim()||
+                   fname.replace(/\.xrdml$/i,'');
+
+  return _buildSample(sampleName,fname,tth,intensity,{lambda,timeStart,timeEnd,countingTime:ct});
+}
+
+/** HDF5 (.hdf5 / .h5) via h5wasm — full NeXus/Anton Paar metadata */
+let _h5wasmReady=null;
+async function _ensureH5Wasm(){
+  if(_h5wasmReady)return _h5wasmReady;
+  _h5wasmReady=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/h5wasm@0.7.7/dist/iife/h5wasm.js';
+    s.onload=async()=>{try{await h5wasm.ready;resolve(h5wasm);}catch(e){reject(e);}};
+    s.onerror=()=>reject(new Error('h5wasm CDN load failed'));
+    document.head.appendChild(s);
+  });
+  return _h5wasmReady;
+}
+
+function _h5FlattenScalar(val){
+  if(val==null||val==='')return null;
+  if(val instanceof Date)return val;
+  if(typeof val==='number'&&Number.isFinite(val))return val;
+  if(typeof val==='string')return val;
+  if(val instanceof Uint8Array)return val;
+  if(ArrayBuffer.isView(val))return new Uint8Array(val.buffer,val.byteOffset,val.byteLength);
+  if(Array.isArray(val)){
+    if(!val.length)return null;
+    if(val.length===1)return _h5FlattenScalar(val[0]);
+    if(val.every(x=>typeof x==='number'&&x>=0&&x<256))return val;
+    return _h5FlattenScalar(val[0]);
+  }
+  return val;
+}
+function _h5str(val){
+  const v=_h5FlattenScalar(val);
+  if(v==null)return null;
+  if(typeof v==='string')return v.replace(/\0/g,'').trim()||null;
+  const dec=bytes=>{
+    try{return new TextDecoder().decode(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes)).replace(/\0/g,'').trim()||null;}
+    catch(_e){return null;}
+  };
+  if(v instanceof Uint8Array)return dec(v);
+  if(Array.isArray(v)&&v.length&&typeof v[0]==='number')return dec(Uint8Array.from(v));
+  return String(v).replace(/\0/g,'').trim()||null;
+}
+function _h5num(val){
+  if(val==null)return null;
+  const v=_h5FlattenScalar(val);
+  const n=typeof v==='number'?v:parseFloat(_h5str(v));
+  return Number.isFinite(n)?n:null;
+}
+/** NeXus DATE_TIME, ISO strings, or unix seconds/ms from h5wasm. */
+function _h5date(val){
+  const raw=_h5FlattenScalar(val);
+  if(raw instanceof Date&&!isNaN(raw.getTime()))return raw;
+  if(typeof raw==='number'&&Number.isFinite(raw)){
+    const ms=raw>1e12?raw:(raw>1e9?raw*1000:raw);
+    const d=new Date(ms);
+    return isNaN(d.getTime())?null:d;
+  }
+  const s=_h5str(val);
+  if(!s)return null;
+  let t=s.trim();
+  if(/^\d{4}-\d{2}-\d{2}T/.test(t)){
+    t=t.replace(/(\.\d{3})\d+/,'$1');
+    if(!/[zZ]|[+\-]\d{2}:\d{2}$/.test(t))t+='Z';
+  }
+  let d=new Date(t);
+  if(!isNaN(d.getTime()))return d;
+  d=new Date(t.replace(/(\.\d+)\d*([zZ]|$)/,'$1$2'));
+  return isNaN(d.getTime())?null:d;
+}
+/** Find start_time / end_time under NXentry (Anton Paar NeXus layout). */
+function h5ReadTimes(entry){
+  const tryPaths=(sp,ep)=>{const t0=_h5date(h5Rd(entry,sp));const t1=_h5date(h5Rd(entry,ep));return{t0,t1};};
+  let{t0,t1}=tryPaths('start_time','end_time');
+  if(t0||t1)return{t0,t1};
+  ({t0,t1}=tryPaths('measurement/start_time','measurement/end_time'));
+  if(t0||t1)return{t0,t1};
+  let f0=null,f1=null;
+  function walk(g){
+    let keys;try{keys=g.keys();}catch(_e){return;}
+    for(const k of keys){
+      try{
+        const item=g.get(k);
+        if(!item)continue;
+        const lk=String(k).toLowerCase();
+        if(item.type==='Dataset'){
+          if(lk==='start_time'&&!f0)f0=_h5date(item.value);
+          else if(lk==='end_time'&&!f1)f1=_h5date(item.value);
+        }else if(item.type==='Group')walk(item);
+      }catch(_e){}
+    }
+  }
+  walk(entry);
+  return{t0:f0,t1:f1};
+}
+function h5Rd(entry,path){
+  try{return entry.get(path)?.value??null;}catch(_e){return null;}
+}
+function ensureSampleThermal(s){
+  if(!s)return;
+  const m=s.meta||{};
+  applyThermalDefaultsToSample(s,s.rawName||s.name||'',{
+    timeStart:s.timeStart,timeEnd:s.timeEnd,
+    tempStart:s.tempStart,tempEnd:s.tempEnd,tempSetPoint:s.tempSetPoint,
+    countingTime:m.countingTime,timePerStep:m.timePerStep,
+    scanSpeed:m.scanSpeed,scanSpeedUnit:m.scanSpeedUnit,scanStart:m.scanStart,scanStop:m.scanStop
+  });
+}
+
+async function parseHDF5(arrayBuffer,fname){
+  try{
+    const h5=await _ensureH5Wasm();
+    const {FS}=h5;
+    const tmp='/tmp_'+Date.now()+'.h5';
+    FS.writeFile(tmp,new Uint8Array(arrayBuffer));
+    const f=new h5.File(tmp,'r');
+
+    /* ---- locate entry group (NeXus NXentry) ---- */
+    let entryKey=null;
+    for(const k of f.keys()){try{if((f.get(k).attrs?.NX_class&&_h5str(f.get(k).attrs.NX_class[0])||'').includes('NXentry')){entryKey=k;break;}}catch(_e){}}
+    if(!entryKey&&f.keys().length>0)entryKey=f.keys()[0];
+    const entry=entryKey?f.get(entryKey):f;
+
+    /* ---- helper: safely read a scalar dataset inside entry ---- */
+    const rd=(path)=>h5Rd(entry,path);
+
+    /* ---- metadata ---- */
+    const{ t0:timeStart,t1:timeEnd }=h5ReadTimes(entry);
+    const title=_h5str(rd('title'));
+    const sampleName=_h5str(rd('sample/name'))||title||fname.replace(/\.hdf?5$/i,'');
+    const sampleDesc=_h5str(rd('sample/description'));
+    const instrument=_h5str(rd('instrument/name'));
+    const stage=_h5str(rd('instrument/instrument_info/stage'));
+    const stageConfig=_h5str(rd('instrument/instrument_info/stage_configuration'));
+    const detector=_h5str(rd('instrument/detector/description'));
+    const source=_h5str(rd('instrument/source/name'));
+    const targetMat=_h5str(rd('instrument/source/target_material'));
+    const voltage=_h5num(rd('instrument/source/voltage'));   /* V */
+    const current=_h5num(rd('instrument/source/current'));   /* A */
+    let lambda=_h5num(rd('instrument/monochromator/wavelength')); /* m */
+    if(lambda!=null)lambda=lambda*1e10; /* → Å */
+    const scanMode=_h5str(rd('info/mode'));
+    const scanType=_h5str(rd('info/scan_type'));
+    const scanStep=_h5num(rd('info/step_size'));
+    const scanStart=_h5num(rd('info/start'));
+    const scanStop=_h5num(rd('info/stop'));
+    const timePerStep=_h5num(rd('info/time_per_step'));
+    const spinning=_h5num(rd('instrument/instrument_info/sample_spinning'));
+    /* ---- data arrays ---- */
+    let tthData=null,intData=null;
+    /* Anton Paar NeXus layout: entry/data/two_theta + entry/data/data (shape 1×N×1) */
+    try{
+      const tthDs=entry.get('data/two_theta');
+      if(tthDs){tthData=Array.from(tthDs.value);}
+    }catch(_e){}
+    try{
+      const intDs=entry.get('data/data');
+      if(intDs){
+        const raw=Array.from(intDs.value);
+        /* flatten (1,N,1) → N */
+        intData=raw.map(v=>typeof v==='number'?v:(Array.isArray(v)?v[0]:0));
+      }
+    }catch(_e){}
+
+    /* generic fallback: scan all 1-D numeric datasets */
+    if(!tthData||!intData){
+      const fallback={};
+      function visitAll(group,prefix){
+        let keys;try{keys=group.keys();}catch(_e){return;}
+        for(const k of keys){
+          try{
+            const item=group.get(k);if(!item)continue;
+            const fp=prefix+'/'+k;
+            if(item.type==='Dataset'){
+              const sh=item.shape;
+              if(!sh)continue;
+              const flat=sh.reduce((a,b)=>a*b,1);
+              if(flat<4)continue;
+              const arr=Array.from(item.value).flat(Infinity).filter(v=>typeof v==='number'&&isFinite(v));
+              if(!arr.length)continue;
+              const lk=k.toLowerCase();
+              if(!tthData&&(lk.includes('tth')||lk.includes('2th')||lk.includes('angle')||lk.includes('two')))tthData=arr;
+              else if(!intData&&(lk.includes('intensity')||lk==='i'||lk==='data'||lk==='counts'||lk==='signal'))intData=arr;
+              else fallback[fp]=arr;
+            }else if(item.type==='Group'){visitAll(item,fp);}
+          }catch(_e){}
+        }
+      }
+      visitAll(entry,'');
+      if(!intData){
+        const arrs=Object.values(fallback);
+        if(arrs.length>=2){if(!tthData)tthData=arrs[0];intData=arrs[arrs.length-1];}
+        else if(arrs.length===1)intData=arrs[0];
+      }
+    }
+
+    f.close();
+    try{FS.unlink(tmp);}catch(_e){}
+
+    if(!intData||!intData.length)return null;
+    if(!tthData)tthData=Array.from({length:intData.length},(_,i)=>i);
+    const n=Math.min(tthData.length,intData.length);
+    const tth=tthData.slice(0,n);
+    const intensity=intData.slice(0,n);
+
+    const temps=resolveSampleTemps(fname,{});
+    return _buildSample(sampleName,fname,tth,intensity,{
+      timeStart,timeEnd,lambda,
+      tempSetPoint:temps.tempSetPoint,tempStart:temps.tempStart,tempEnd:temps.tempEnd,
+      voltage:voltage!=null?voltage/1000:null, /* kV */
+      current:current!=null?current*1000:null, /* mA */
+      instrument,stage,stageConfig,detector,source,targetMat,
+      scanMode,scanType,scanStep,scanStart,scanStop,timePerStep,
+      sampleDesc,spinning:spinning===1
+    });
+  }catch(e){
+    console.error('HDF5 parse error',e);
+    return null;
+  }
+}
+
+/** Shared sample-object builder — all extra meta stored in `meta` sub-object */
+function _buildSample(name,fname,tth,intensity,opts={}){
+  const temps=resolveSampleTemps(fname,opts);
+  const{
+    tempSetPoint=temps.tempSetPoint,tempStart=temps.tempStart,tempEnd=temps.tempEnd,
+    timeStart=null,timeEnd=null,
+    lambda=null,voltage=null,current=null,waveType=null,
+    scanSpeed=null,scanSpeedUnit=null,scanStep=null,scanStart=null,scanStop=null,scanMode=null,scanAxis=null,
+    goniometerName=null,attachmentName=null,counterName=null,sampleHolder=null,
+    fileOperator=null,fileSample=null,fileComment=null,fileMemo=null,
+    instrument=null,stage=null,stageConfig=null,detector=null,source=null,targetMat=null,
+    countingTime=null,timePerStep=null,sampleDesc=null,spinning=null,scanType=null
+  }=opts;
+
+  const maxI=Math.max(...intensity);
+  const maxIdx=intensity.indexOf(maxI);
+  const segs=[];
+  const sample={
+    name,rawName:fname,tth,intensity,maxI,peakPos:tth[maxIdx].toFixed(2),
+    sampleUid:newSampleUid(),color:'#fff',visible:true,group:'A',
+    scanRate:null,rampStartTemp:null,tempSetPoint,tempStart,tempEnd,timeStart,timeEnd,segments:segs,
+    xrdOffsetManual:0,intensityGainManual:1,xrdLegendLabel:'',
+    thermalTimeStartOverride:null,thermalTimeEndOverride:null,
+    thermalTempOverride:null,thermalTempStartOverride:null,thermalTempEndOverride:null,
+    meta:{
+      lambda,voltage,current,waveType,
+      scanSpeed,scanSpeedUnit,scanStep,scanStart,scanStop,scanMode,scanAxis,scanType,
+      goniometerName,attachmentName,counterName,sampleHolder,
+      fileOperator,fileSample,fileComment,fileMemo,
+      instrument,stage,stageConfig,detector,source,targetMat,
+      countingTime,timePerStep,sampleDesc,spinning
+    }
+  };
+  applyThermalDefaultsToSample(sample,fname,opts);
+  return sample;
+}
+
+/** Format dispatcher */
+function parseAny(file,textOrBuffer){
+  const n=file.name.toLowerCase();
+  if(n.endsWith('.ras'))return parseRas(textOrBuffer,file.name);
+  if(n.endsWith('.scn'))return parseSCN(textOrBuffer,file.name);
+  if(n.endsWith('.xrdml'))return parseXRDML(textOrBuffer,file.name);
+  if(n.endsWith('.hdf5')||n.endsWith('.h5'))return parseHDF5(textOrBuffer,file.name);
+  return null;
+}
+
+/* =====================================================================
+   File loading
+   ===================================================================== */
+
+function finishRasBatch(pendingRef){
+  if(--pendingRef.n>0)return;
+  samples.sort(naturalCompareSamples);
+  samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
+  try{renderAll();}catch(e){console.error(e);toast('UI update: '+(e.message||e));}
+  void refreshDbPanels().catch(err=>{console.error(err);toast('DB: '+(err.message||err));});
+}
+
+function handleFiles(fileList){
+  const ACCEPTED=/\.(ras|scn|xrdml|hdf5|h5)$/i;
+  const list=[...fileList].filter(f=>ACCEPTED.test(f.name)).sort((a,b)=>naturalCompare({name:a.name},{name:b.name}));
+  if(!list.length){toast('No .ras / .scn / .xrdml / .hdf5 files found');return;}
+  const pendingRef={n:list.length};
+  list.forEach((f,idx)=>{
+    const isHDF5=/\.(hdf5|h5)$/i.test(f.name);
+    const r=new FileReader();
+    r.addEventListener('loadend',async()=>{
+      try{
+        if(r.error){toast(`Read failed: ${f.name} - ${r.error.message||r.error}`);finishRasBatch(pendingRef);return;}
+        const raw=r.result; /* ArrayBuffer for HDF5, string otherwise */
+        let p=await Promise.resolve(parseAny(f,raw));
+        /* .ras fallback: retry with UTF-8 */
+        if(!p&&!isHDF5&&typeof raw==='string'){
+          const r2=new FileReader();
+          await new Promise((res2,rej2)=>{
+            r2.onload=async e=>{try{res2(await Promise.resolve(parseAny(f,String(e.target.result))));}catch(err){rej2(err);}};
+            r2.onerror=()=>rej2(r2.error);
+            r2.readAsText(f,'UTF-8');
+          }).then(p2=>{p=p2;}).catch(()=>{});
+        }
+        if(p){
+          /* Duplicate check: skip if same name exists in memory or DB */
+          const alreadyInMemory=samples.some(s=>s.rawName===f.name);
+          let alreadyInDb=false;
+          try{const existing=await adapter.listFiles();alreadyInDb=existing.some(x=>x.name===f.name);}catch(_e){}
+          if(alreadyInMemory||alreadyInDb){
+            toast(`Skipped: "${f.name}" is already loaded`);
+          }else{
+            p.color=COLORS[(samples.length+idx)%COLORS.length];
+            ensureSampleThermal(p);
+            samples.push(p);
+            /* HDF5: store as base64 for DB cache; text formats store rawText */
+            let dbPayload;
+            if(isHDF5){
+              const bytes=new Uint8Array(raw);
+              let b='';for(let i=0;i<bytes.length;i++)b+=String.fromCharCode(bytes[i]);
+              dbPayload={name:f.name,rawText:'__HDF5_BASE64__'+btoa(b),rowCount:p.tth.length,folderPath:'',tempC:parseTempFromFilename(f.name),sampleLabel:'',tags:[],capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null};
+            }else{
+              dbPayload={name:f.name,rawText:raw,rowCount:p.tth.length,folderPath:'',tempC:parseTempFromFilename(f.name),sampleLabel:'',tags:[],capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null};
+            }
+            try{await adapter.saveFile(dbPayload);}catch(err){console.error(err);toast('DB save: '+(err.message||err));}
+          }
+        }else{
+          toast(`Could not parse: ${f.name}（Supported: .ras .scn .xrdml .hdf5）`);
+        }
+      }catch(e){console.error(e);toast(`Processing error: ${f.name} - ${e.message||e}`);}
+      finishRasBatch(pendingRef);
+    });
+    if(isHDF5)r.readAsArrayBuffer(f);
+    else{
+      try{r.readAsText(f,'ISO-8859-1');}
+      catch(e){try{r.readAsText(f,'utf-8');}catch(e2){toast(`Failed to start reading: ${f.name}`);finishRasBatch(pendingRef);}}
+    }
+  });
+}
+
+function renderSampleList(){
+  const el=document.getElementById('sampleList');
+  if(!samples.length){el.innerHTML='<div class="empty">No samples</div>';return;}
+  el.innerHTML=samples.map((s,i)=>`
+    <div class="sample-item" style="opacity:${s.visible?1:.45}">
+      <div class="sample-row">
+        <div style="width:10px;height:10px;border-radius:50%;background:${s.color}"></div>
+        <div class="sample-name" title="${esc(defaultFileLegend(s))}">${esc(defaultFileLegend(s))}</div>
+        <div class="sample-meta">peak ${s.peakPos}° | T ${Number.isFinite(s.tempSetPoint)?s.tempSetPoint.toFixed(1):(s.tempStart!=null?s.tempStart.toFixed(1):'-')} °C${s.meta?.lambda?' | λ='+s.meta.lambda.toFixed(4)+' Å':''}</div>
+        <button class="btn" onclick="toggleVisible(${i})">eye</button>
+        <button class="btn warn" onclick="removeSample(${i})">x</button>
+      </div>
+      ${(()=>{
+        const m=s.meta||{};
+        const rows=[];
+        if(m.instrument)rows.push(['Instrument',m.instrument+(m.stage?` / ${m.stage}`:'')]);
+        if(m.stageConfig)rows.push(['Stage config',m.stageConfig]);
+        if(m.attachmentName&&m.attachmentName!==m.stage)rows.push(['Attachment',m.attachmentName]);
+        if(m.goniometerName)rows.push(['Goniometer',m.goniometerName]);
+        if(m.detector)rows.push(['Detector',m.detector]);
+        if(m.source)rows.push(['Source',m.source+(m.targetMat?` (${m.targetMat})`:m.waveType?` (${m.waveType})`:'')]);
+        if(m.voltage!=null||m.current!=null)rows.push(['Tube',`${m.voltage!=null?m.voltage+' kV':''}${m.voltage!=null&&m.current!=null?' / ':''}${m.current!=null?m.current+' mA':''}`]);
+        if(m.scanAxis||m.scanMode)rows.push(['Scan',`${m.scanAxis||m.scanType||''} ${m.scanMode||''}`.trim()]);
+        if(m.scanStart!=null||m.scanStop!=null)rows.push(['Range',`${m.scanStart??'-'} – ${m.scanStop??'-'} °`]);
+        if(m.scanStep!=null)rows.push(['Step',`${m.scanStep} °`]);
+        if(m.scanSpeed!=null)rows.push(['Speed',`${m.scanSpeed} ${m.scanSpeedUnit||'deg/min'}`]);
+        if(m.timePerStep!=null)rows.push(['Time/step',`${m.timePerStep.toFixed(3)} s`]);
+        if(m.countingTime!=null)rows.push(['Count time',`${m.countingTime} s`]);
+        if(m.sampleDesc)rows.push(['Sample desc',m.sampleDesc]);
+        if(m.spinning!=null)rows.push(['Spinning',m.spinning?'Yes':'No']);
+        if(m.fileOperator&&m.fileOperator.trim()&&m.fileOperator.trim()!==' ')rows.push(['Operator',m.fileOperator]);
+        if(m.fileSample&&m.fileSample.trim()&&m.fileSample.trim()!==' ')rows.push(['Sample ID',m.fileSample]);
+        if(m.fileComment&&m.fileComment.trim()&&m.fileComment.trim()!==' ')rows.push(['Comment',m.fileComment]);
+        if(!rows.length)return'';
+        return`<details class="seg-acc" style="margin-top:4px">
+          <summary><span class="seg-acc-title" style="font-size:10px">Instrument / conditions</span><span style="font-size:10px;color:var(--text3)">click to expand</span></summary>
+          <div class="seg-acc-body">
+            <table style="width:100%;border-collapse:collapse;font-size:10px">
+              ${rows.map(([k,v])=>`<tr><td style="color:var(--text3);padding:2px 6px 2px 0;white-space:nowrap;vertical-align:top">${esc(k)}</td><td style="padding:2px 0;word-break:break-all">${esc(String(v))}</td></tr>`).join('')}
+            </table>
+          </div>
+        </details>`;
+      })()}
+      <div class="ctrl-row" style="margin-top:6px">
+        <span>Manual offset</span>
+        <input class="num" type="number" step="10" value="${isFinite(s.xrdOffsetManual)?s.xrdOffsetManual:0}" oninput="setManualOffset(${i},this.value)" ${xrdOffsetMode==='manual'?'':'disabled'}>
+        <span>Manual gain</span>
+        <input class="num" type="number" step="0.1" min="0.01" value="${(isFinite(s.intensityGainManual)&&s.intensityGainManual>0)?s.intensityGainManual:1}" oninput="setManualGain(${i},this.value)" ${xrdGainMode==='manual'?'':'disabled'}>
+      </div>
+      <details class="seg-acc sample-thermal-acc" ${openSampleThermalAcc.has(`t${i}`)?'open':''} ontoggle="onSampleThermalAccToggle(event,${i})">
+        <summary><span class="seg-acc-title">Thermal / segments</span><span style="font-size:10px;color:var(--text3)">click to expand</span></summary>
+        <div class="seg-acc-body">
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">Times from file metadata (editable). T defaults from filename; edit to override (flat during measurement).</div>
+          <div class="ctrl-row" style="margin-top:6px">
+            <span>Start</span>
+            <input class="txt-sm" type="datetime-local" step="60" value="${esc(formatDatetimeLocalValue(thermalUiStartDate(s)))}" onchange="setThermalTimeStartOverride(${i},this.value)">
+            <span>End</span>
+            <input class="txt-sm" type="datetime-local" step="60" value="${esc(formatDatetimeLocalValue(thermalUiEndDate(s)))}" onchange="setThermalTimeEndOverride(${i},this.value)">
+            <span>T (°C)</span>
+            <input class="num" type="number" step="0.1" placeholder="from filename" value="${esc(thermalUiTempStr(s))}" oninput="setSampleThermalTemp(${i},this.value)">
+          </div>
+          <div class="sample-seg-block" style="margin-top:10px;padding-top:8px">
+            <div style="font-size:10px;color:var(--text3);margin-bottom:4px">Segments — combine options in Combine panel. Y offset/gain affect thermal plot.</div>
+            ${(s.segments||[]).map((seg,gi)=>{
+              const k=`${i}_${gi}`;
+              const accOpen=openSegmentAcc.has(k);
+              const yg=(seg.yGain&&seg.yGain>0)?seg.yGain:1;
+              return`<details class="seg-acc" ${accOpen?'open':''} ontoggle="onSegAccToggle(event,${i},${gi})">
+                <summary><span class="seg-acc-title">${esc(seg.segType)}</span>${seg.selectedOuter?' <span style="color:var(--accent);font-size:10px">[combine]</span>':''}</summary>
+                <div class="seg-acc-body ctrl-row" style="flex-direction:column;align-items:stretch;gap:6px">
+                  <label class="ctrl-row" style="gap:6px;cursor:pointer"><input type="checkbox" ${seg.selectedOuter?'checked':''} onchange="setOuterSel(${i},${gi},this.checked)"><span>Include in combine</span></label>
+                  <div class="ctrl-row">
+                    <span>Xoff Δ2θ</span><input class="num" type="number" step="0.02" value="${seg.xOffset||0}" onchange="setSegXoff(${i},${gi},this.value)">
+                    <span>Yoff ΔI</span><input class="num" type="number" step="50" value="${seg.yOffset||0}" onchange="setSegYoff(${i},${gi},this.value)">
+                  </div>
+                  <div class="ctrl-row">
+                    <span>Y gain</span><input class="num" type="number" step="0.05" min="0.01" value="${yg}" oninput="setSegYgain(${i},${gi},this.value)">
+                  </div>
+                </div>
+              </details>`;
+            }).join('')}
+          </div>
+        </div>
+      </details>
+    </div>
+  `).join('');
+}
+
+function readXrdScaleOpts(){
+  const xMin=parseFloat(document.getElementById('xMin')?.value);
+  const xMax=parseFloat(document.getElementById('xMax')?.value);
+  const yMinRaw=document.getElementById('xrdYMin')?.value;
+  const yMaxRaw=document.getElementById('xrdYMax')?.value;
+  const yMin=yMinRaw!==''&&yMinRaw!=null?parseFloat(yMinRaw):NaN;
+  const yMax=yMaxRaw!==''&&yMaxRaw!=null?parseFloat(yMaxRaw):NaN;
+  const xTitle=(document.getElementById('xrdXTitle')?.value||'').trim()||defaultXaxisTitleForMode(xrdXAxisMode);
+  const yTitle=(document.getElementById('xrdYTitle')?.value||'').trim()||'Intensity (cps)';
+  const x={type:'linear',title:{display:true,text:xTitle}};
+  const y={title:{display:true,text:yTitle}};
+  if(isFinite(xMin))x.min=xMin;
+  if(isFinite(xMax))x.max=xMax;
+  if(isFinite(yMin))y.min=yMin;
+  if(isFinite(yMax))y.max=yMax;
+  return{x,y};
+}
+function syncXrdChartHeight(){
+  const h=parseFloat(document.getElementById('xrdChartHeight')?.value);
+  xrdChartHeight=isFinite(h)?Math.max(200,Math.min(1200,h)):420;
+  const wrap=document.getElementById('xrdCanvasWrap');
+  if(wrap)wrap.style.height=xrdChartHeight+'px';
+}
+function applyXrdChartLayout(){syncXrdChartHeight();redrawXrd();}
+function sampleLambdaA(s){
+  const l=s?.meta&&Number.isFinite(+s.meta.lambda)?(+s.meta.lambda):null;
+  return Number.isFinite(l)&&l>0?l:1.5406;
+}
+function xFromTwoThetaDeg(twoThetaDeg,s){
+  if(xrdXAxisMode==='2theta')return twoThetaDeg;
+  const th=(twoThetaDeg*Math.PI/180)/2;
+  const sin=Math.sin(th);
+  if(!Number.isFinite(sin)||Math.abs(sin)<1e-12)return null;
+  const lambdaA=sampleLambdaA(s);
+  const dNm=lambdaA/(20*sin);
+  if(!Number.isFinite(dNm)||dNm<=0)return null;
+  if(xrdXAxisMode==='d')return dNm;
+  return 1/dNm; // nm^-1
+}
+function defaultXaxisTitleForMode(mode){
+  if(mode==='d')return'd (nm)';
+  if(mode==='nm-1')return'nm^-1';
+  return'2theta (deg)';
+}
+function updateXaxisModeUi(){
+  const sel=document.getElementById('xrdXAxisMode');
+  if(sel)sel.value=xrdXAxisMode;
+  const minLbl=document.getElementById('xAxisMinLbl');
+  const maxLbl=document.getElementById('xAxisMaxLbl');
+  const t=defaultXaxisTitleForMode(xrdXAxisMode);
+  if(minLbl)minLbl.textContent=`${t} min`;
+  if(maxLbl)maxLbl.textContent=`${t} max`;
+}
+function setXrdXAxisMode(mode){
+  const m=(mode==='d'||mode==='nm-1')?mode:'2theta';
+  xrdXAxisMode=m;
+  updateXaxisModeUi();
+  const xTitle=document.getElementById('xrdXTitle');
+  if(xTitle)xTitle.value=defaultXaxisTitleForMode(m);
+  const xMinEl=document.getElementById('xMin');
+  const xMaxEl=document.getElementById('xMax');
+  if(xMinEl&&xMaxEl){
+    if(m==='2theta'){xMinEl.value='2';xMaxEl.value='32';}
+    else if(m==='d'){xMinEl.value='0.2';xMaxEl.value='4.0';}
+    else{xMinEl.value='0.25';xMaxEl.value='5.0';}
+  }
+  redrawXrd();
+}
+function readXrdChartSettingsFromDom(){
+  const h=parseFloat(document.getElementById('xrdChartHeight')?.value);
+  if(isFinite(h))xrdChartHeight=Math.max(200,Math.min(1200,h));
+  return{
+    xrdChartHeight,
+    xrdXAxisMode,
+    outerXMin:document.getElementById('xMin')?.value??'',
+    outerXMax:document.getElementById('xMax')?.value??'',
+    outerYMin:document.getElementById('xrdYMin')?.value??'',
+    outerYMax:document.getElementById('xrdYMax')?.value??'',
+    outerXTitle:document.getElementById('xrdXTitle')?.value??'',
+    outerYTitle:document.getElementById('xrdYTitle')?.value??''
+  };
+}
+function applyXrdChartSettingsToDom(s){
+  if(!s)return;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el&&v!=null&&v!=='')el.value=v;};
+  if(isFinite(s.xrdChartHeight))xrdChartHeight=s.xrdChartHeight;
+  if(s.xrdXAxisMode==='2theta'||s.xrdXAxisMode==='d'||s.xrdXAxisMode==='nm-1')xrdXAxisMode=s.xrdXAxisMode;
+  set('xrdChartHeight',xrdChartHeight);
+  set('xMin',s.outerXMin!=null?s.outerXMin:s.xrdXMin);set('xMax',s.outerXMax!=null?s.outerXMax:s.xrdXMax);
+  set('xrdYMin',s.outerYMin!=null?s.outerYMin:s.xrdYMin);set('xrdYMax',s.outerYMax!=null?s.outerYMax:s.xrdYMax);
+  set('xrdXTitle',s.outerXTitle||s.xrdXTitle);set('xrdYTitle',s.outerYTitle||s.xrdYTitle);
+  updateXaxisModeUi();
+  if(s.xrdSourceMode==='series'||s.xrdSourceMode==='all')xrdSourceMode=s.xrdSourceMode;
+  const src=document.getElementById('xrdSourceMode');if(src)src.value=xrdSourceMode;
+  syncXrdChartHeight();
+}
+function xrdMetaRecordForSample(s){
+  const keyName=(s?.rawName&&String(s.rawName).trim())||(s?.name&&String(s.name).trim())||'';
+  const rec=(dbFiles||[]).find(f=>String(f?.name||'').trim()===keyName);
+  if(rec)return rec;
+  return{
+    name:keyName,
+    sampleLabel:s?.name||'',
+    tags:normalizeTags(s?.meta?.tags),
+    tempC:Number.isFinite(s?.tempSetPoint)?s.tempSetPoint:(Number.isFinite(s?.tempStart)?s.tempStart:null),
+    capillarySize:Number.isFinite(s?.meta?.capillarySize)?(+s.meta.capillarySize):null,
+    measurementTimeMin:Number.isFinite(s?.meta?.measurementTimeMin)?(+s.meta.measurementTimeMin):null,
+    measurementStartIso:s?.timeStart instanceof Date?s.timeStart.toISOString():null,
+    measurementEndIso:s?.timeEnd instanceof Date?s.timeEnd.toISOString():null,
+    savedAt:null
+  };
+}
+function xrdGroupLabel(field,s){return dbTreeLabel(field,xrdMetaRecordForSample(s));}
+function xrdGroupSortValue(field,s){return dbTreeSortValue(field,xrdMetaRecordForSample(s));}
+function xrdSetVisibleByUid(sampleUid,checked){
+  const s=samples.find(x=>x.sampleUid===sampleUid);
+  if(!s)return;
+  xrdHiddenByKey.set(xrdKey(s),!checked);
+}
+function xrdSetTreeGroupChecked(nodeKey,checked){
+  xrdTraceTreeNodeChecks[nodeKey]=!!checked;
+  const uids=xrdTraceTreeGroups[nodeKey]||[];
+  uids.forEach(uid=>xrdSetVisibleByUid(uid,checked));
+  redrawXrd();
+  renderXrdTraceList();
+}
+function xrdTraceLeafRow(s){
+  const si=samples.indexOf(s);
+  const defLeg=autoChartLegend(s);
+  const leg=(s.xrdLegendLabel!=null&&String(s.xrdLegendLabel).trim())?String(s.xrdLegendLabel).trim():defLeg;
+  const meta=xrdMetaRecordForSample(s);
+  const sampleLabel=dbFileSampleLabel(meta);
+  const cap=Number.isFinite(+meta.capillarySize)?(+meta.capillarySize):'';
+  const mtManual=dbFileMeasurementTimeMinManual(meta);
+  const mt=Number.isFinite(mtManual)?mtManual:'';
+  const mtInf=dbFileMeasurementTimeMin(meta);
+  const mStart=dbIsoToLocalInput(dbFileMeasurementStartIso(meta));
+  const mEnd=dbIsoToLocalInput(dbFileMeasurementEndIso(meta));
+  const tt=Number.isFinite(+dbFileTempC(meta))?(+dbFileTempC(meta)):'';
+  const tags=dbFileTags(meta).join(', ');
+  const checked=!xrdHiddenByKey.get(xrdKey(s));
+  return`<div class="outer-seg-row">
+    <input type="checkbox" ${checked?'checked':''} onchange="setXrdTraceVisibleByUid('${esc(s.sampleUid)}',this.checked)">
+    <span style="min-width:0;flex:1"><strong>${esc(defLeg)}</strong></span>
+    <div class="outer-seg-fields" style="grid-column:1/-1">
+      <label>Sample<input class="txt-sm num-wide" type="text" value="${esc(sampleLabel)}" placeholder="sample label" onchange="setXrdTraceMetaByUid('${esc(s.sampleUid)}','sampleLabel',this.value)"></label>
+      <label>Capillary<input class="num num-wide" type="number" step="0.001" value="${esc(cap)}" placeholder="mm" onchange="setXrdTraceMetaByUid('${esc(s.sampleUid)}','capillarySize',this.value)"></label>
+      <label>Meas. start<input class="txt-sm num-wide" type="datetime-local" value="${esc(mStart)}" onchange="setXrdTraceMetaByUid('${esc(s.sampleUid)}','measurementStartIso',this.value)"></label>
+      <label>Meas. end<input class="txt-sm num-wide" type="datetime-local" value="${esc(mEnd)}" onchange="setXrdTraceMetaByUid('${esc(s.sampleUid)}','measurementEndIso',this.value)"></label>
+      <label>Meas. time<input class="num num-wide" type="number" step="0.01" value="${esc(mt)}" placeholder="auto=${Number.isFinite(mtInf)?mtInf.toFixed(2):'-'} min" onchange="setXrdTraceMetaByUid('${esc(s.sampleUid)}','measurementTimeMin',this.value)"></label>
+      <label>Temp<input class="num num-wide" type="number" step="0.1" value="${esc(tt)}" placeholder="°C" onchange="setXrdTraceMetaByUid('${esc(s.sampleUid)}','tempC',this.value)"></label>
+      <label>Tags<input class="txt-sm num-wide" type="text" value="${esc(tags)}" placeholder="a,b,c" onchange="setXrdTraceMetaByUid('${esc(s.sampleUid)}','tags',this.value)"></label>
+      <label>Legend<input class="txt-sm num-wide" type="text" value="${esc(leg)}" placeholder="${esc(defLeg)}" onchange="setXrdLegend(${si},this.value)"></label>
+      <label>Color<input type="color" value="${esc(s.color)}" oninput="setXrdColor(${si},this.value)"></label>
+    </div>
+  </div>`;
+}
+function buildXrdTraceTree(items,level,path){
+  if(level>=dbTreeOrder.length||items.length<=1){
+    return items.map(xrdTraceLeafRow).join('');
+  }
+  const field=dbTreeOrder[level];
+  const groups=new Map();
+  items.forEach(s=>{
+    const k=xrdGroupLabel(field,s);
+    if(!groups.has(k))groups.set(k,[]);
+    groups.get(k).push(s);
+  });
+  const keys=[...groups.keys()].sort((a,b)=>{
+    const av=xrdGroupSortValue(field,groups.get(a)[0]);
+    const bv=xrdGroupSortValue(field,groups.get(b)[0]);
+    if(typeof av==='number'&&typeof bv==='number')return av-bv;
+    return String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:'base'});
+  });
+  return keys.map(k=>{
+    const groupItems=groups.get(k)||[];
+    const nodeKey=`${path}/${field}:${k}`;
+    const nodeArg=encodeURIComponent(nodeKey);
+    xrdTraceTreeGroups[nodeKey]=groupItems.map(s=>s.sampleUid);
+    const collapsed=!!dbTreeCollapsed[nodeKey];
+    const tri=collapsed?'▸':'▾';
+    const allChecked=groupItems.every(s=>!xrdHiddenByKey.get(xrdKey(s)));
+    const checked=(nodeKey in xrdTraceTreeNodeChecks)?!!xrdTraceTreeNodeChecks[nodeKey]:allChecked;
+    if(!(nodeKey in xrdTraceTreeNodeChecks))xrdTraceTreeNodeChecks[nodeKey]=checked;
+    return`<div class="db-tree-node">
+      <div class="db-tree-head" onclick="toggleDbTreeNode(decodeURIComponent('${nodeArg}'))">
+        <span class="db-tree-tri">${tri}</span>
+        <input type="checkbox" ${checked?'checked':''} onclick="event.stopPropagation()" onchange="xrdSetTreeGroupChecked(decodeURIComponent('${nodeArg}'),this.checked)">
+        <span class="db-tree-key">${esc(k)}</span>
+        <span class="db-tree-meta">${groupItems.length}</span>
+      </div>
+      ${collapsed?'':buildXrdTraceTree(groupItems,level+1,nodeKey)}
+    </div>`;
+  }).join('');
+}
+function renderXrdTraceList(){
+  const el=document.getElementById('xrdTraceList');
+  if(!el)return;
+  const vis=xrdVisibleSamples();
+  if(!vis.length){el.innerHTML='<div class="empty">Load samples (and select series if needed)</div>';return;}
+  xrdTraceTreeGroups={};
+  const treeHtml=buildXrdTraceTree(vis,0,'xrd');
+  el.innerHTML=`<div class="db-tree">${treeHtml}</div>`;
+}
+function buildXrdDatasets(vis){
+  const xMin=parseFloat(document.getElementById('xMin')?.value)||2;
+  const xMax=parseFloat(document.getElementById('xMax')?.value)||32;
+  const offsetPct=parseFloat(document.getElementById('offsetInput').value)||0;
+  const globalGain=(parseFloat(document.getElementById('globalGainInput').value)||100)/100;
+  const maxAll=vis.length?Math.max(...vis.map(s=>s.maxI)):1;
+  const d=[];let cum=0;
+  vis.forEach((s,idx)=>{
+    ensureXrdControls(s);
+    const manualOffset=s.xrdOffsetManual||0;
+    const add=xrdMode==='stack'?cum:(xrdOffsetMode==='equal'?idx*(maxAll*offsetPct/100):manualOffset);
+    const gain=xrdGainMode==='equal'?globalGain:s.intensityGainManual;
+    const pts=s.tth.map((twoTheta,j)=>{
+      const x=xFromTwoThetaDeg(twoTheta,s);
+      if(!Number.isFinite(x))return null;
+      return{x,y:s.intensity[j]*gain+add};
+    }).filter(p=>p&&p.x>=xMin&&p.x<=xMax);
+    d.push({label:xrdDisplayLegend(s),_key:xrdKey(s),hidden:!!xrdHiddenByKey.get(xrdKey(s)),data:pts,borderColor:s.color,borderWidth:1.2,pointRadius:0,tension:0});
+    if(xrdMode==='stack')cum+=s.maxI*gain*1.15;
+  });
+  return d;
+}
+function defaultSegLegend(s,seg){return chartLegendForSegment(s,seg);}
+function segDisplayColor(seg,s){return (seg.color&&seg.color.trim())?seg.color.trim():s.color;}
+function readOuterScaleOpts(){return readXrdScaleOpts();}
+function syncOuterChartHeight(){
+  const h=parseFloat(document.getElementById('outerChartHeight')?.value);
+  outerChartHeight=isFinite(h)?Math.max(200,Math.min(1200,h)):420;
+  const wrap=document.getElementById('combineCanvasWrap');
+  if(wrap)wrap.style.height=outerChartHeight+'px';
+}
+function applyOuterChartLayout(){
+  syncOuterChartHeight();
+  redrawOuterChart();
+}
+function readOuterChartSettingsFromDom(){
+  const h=parseFloat(document.getElementById('outerChartHeight')?.value);
+  if(isFinite(h))outerChartHeight=Math.max(200,Math.min(1200,h));
+  return{outerChartHeight,...readXrdChartSettingsFromDom()};
+}
+function applyOuterChartSettingsToDom(s){
+  if(!s)return;
+  const set=(id,v)=>{const el=document.getElementById(id);if(el&&v!=null&&v!=='')el.value=v;};
+  if(isFinite(s.outerChartHeight))outerChartHeight=s.outerChartHeight;
+  set('outerChartHeight',outerChartHeight);
+  applyXrdChartSettingsToDom(s);
+  syncOuterChartHeight();
+}
+/** Combine chart: one XRD trace per selected segment (2θ vs intensity). */
+function buildOuterCombineDatasets(){
+  const sel=selectedOuterSegments();
+  if(!sel.length)return[];
+  const xMin=parseFloat(document.getElementById('xMin')?.value)||2;
+  const xMax=parseFloat(document.getElementById('xMax')?.value)||32;
+  const offsetPct=parseFloat(document.getElementById('offsetInput').value)||0;
+  const globalGain=(parseFloat(document.getElementById('globalGainInput').value)||100)/100;
+  const maxAll=sel.length?Math.max(...sel.map(({s})=>s.maxI||0),1):1;
+  const d=[];let cum=0;
+  sel.forEach(({s,seg},idx)=>{
+    ensureXrdControls(s);
+    const manualOffset=s.xrdOffsetManual||0;
+    const lineAdd=xrdMode==='stack'?cum:(xrdOffsetMode==='equal'?idx*(maxAll*offsetPct/100):manualOffset);
+    const gain=xrdGainMode==='equal'?globalGain:s.intensityGainManual;
+    const xSh=seg.xOffset||0; // offset still interpreted in 2theta
+    const yOff=seg.yOffset||0;
+    const yG=(seg.yGain&&seg.yGain>0)?seg.yGain:1;
+    const stackOff=seg.combineStackOffset||0;
+    const pts=s.tth.map((x,j)=>{
+      const xp2theta=x+xSh;
+      const xp=xFromTwoThetaDeg(xp2theta,s);
+      if(!Number.isFinite(xp))return null;
+      const raw=s.intensity[j]*gain+lineAdd;
+      const yp=(raw+yOff)*yG+stackOff;
+      return{x:xp,y:yp};
+    }).filter(p=>p&&p.x>=xMin&&p.x<=xMax);
+    const legend=(seg.legendLabel&&String(seg.legendLabel).trim())?String(seg.legendLabel).trim():defaultSegLegend(s,seg);
+    const key=outerKey(s,seg);
+    d.push({label:legend,_key:key,hidden:!!outerHiddenByKey.get(key),data:pts,borderColor:segDisplayColor(seg,s),borderWidth:1.2,pointRadius:0,tension:0});
+    if(xrdMode==='stack')cum+=s.maxI*gain*1.15;
+  });
+  return d;
+}
+function redrawXrd(){
+  if(xrdChart)xrdChart.destroy();
+  syncXrdChartHeight();
+  const vis=xrdVisibleSamples();
+  const scales=readXrdScaleOpts();
+  xrdChart=new Chart(document.getElementById('xrdCanvas'),{
+    type:'line',data:{datasets:buildXrdDatasets(vis)},
+    options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:8,font:{size:10}},onClick:(e,item,legend)=>{const ds=legend?.chart?.data?.datasets?.[item.datasetIndex];if(!ds)return;const key=ds._key||item.text;const next=!legend.chart.isDatasetVisible(item.datasetIndex);xrdHiddenByKey.set(key,!next);legend.chart.setDatasetVisibility(item.datasetIndex,next);legend.chart.update();renderXrdTraceList();}}},scales}
+  });
+  redrawOuterChart();
+}
+function thermalYRangeFromPoints(pointArrays){
+  let yLo=Infinity,yHi=-Infinity;
+  (pointArrays||[]).forEach(pts=>{(pts||[]).forEach(p=>{if(p&&Number.isFinite(p.y)){yLo=Math.min(yLo,p.y);yHi=Math.max(yHi,p.y);}});});
+  if(!Number.isFinite(yLo)||!Number.isFinite(yHi))return{};
+  const yPad=Math.max(0.5,(yHi-yLo)*0.12,1);
+  return{suggestedMin:yLo-yPad,suggestedMax:yHi+yPad};
+}
+function thermalSegmentColor(segIndex){return COLORS[segIndex%COLORS.length];}
+/** Join segment endpoints into one polyline; `edge[i]` styles the line from pts[i] to pts[i+1]. */
+function thermalPolylineFromSegs(segs,toX){
+  const pts=[],edge=[],eps=1e-6;
+  (segs||[]).forEach(seg=>{
+    const x0=toX(seg.t0),x1=toX(seg.t1);
+    const A={x:x0,y:segmentYPlot(seg,seg.y0)},B={x:x1,y:segmentYPlot(seg,seg.y1)};
+    if(!pts.length) pts.push(A);
+    else{
+      const L=pts[pts.length-1];
+      if(Math.abs(L.x-A.x)>eps||Math.abs(L.y-A.y)>eps) pts.push(A);
+    }
+    pts.push(B);
+    edge.push({kind:seg.kind||seg.segType||'seg'});
+  });
+  return{pts,edge};
+}
+/** Append a chunk to one global polyline; inserts a bridge edge when the join is not continuous. */
+function thermalAppendMerged(allPts,allEdge,chunkPts,chunkEdge,eps=1e-6){
+  if(!chunkPts||chunkPts.length<2)return;
+  if(!allPts.length){
+    chunkPts.forEach(p=>allPts.push(p));
+    chunkEdge.forEach(e=>allEdge.push(e));
+    return;
+  }
+  const L=allPts[allPts.length-1],F=chunkPts[0];
+  const same=Math.abs(L.x-F.x)<=eps&&Math.abs(L.y-F.y)<=eps;
+  if(!same){
+    allPts.push({x:F.x,y:F.y});
+    allEdge.push({kind:'bridge'});
+  }
+  for(let i=1;i<chunkPts.length;i++){
+    allPts.push(chunkPts[i]);
+    allEdge.push(chunkEdge[i-1]);
+  }
+}
+function thermalDatasetFromPolyline(label,pts,edge,colorRunRef){
+  if(!pts||pts.length<2)return null;
+  edge.forEach((e)=>{
+    if(e.kind==='bridge'){e.color='#94a3b8';return;}
+    e.color=thermalSegmentColor(colorRunRef.i++);
+  });
+  const pointBg=pts.map((_,pi)=>edge[Math.min(pi,edge.length-1)].color);
+  return{
+    label,data:pts,borderColor:edge[0].color,borderWidth:2,pointRadius:4,tension:0,spanGaps:false,
+    pointBackgroundColor:pointBg,
+    segment:{
+      borderColor:ctx=>edge[ctx.p0DataIndex]?.color,
+      borderDash:ctx=>{
+        const k=edge[ctx.p0DataIndex]?.kind;
+        if(k==='ramp')return[6,4];
+        if(k==='bridge')return[4,3];
+        return[];
+      },
+      borderWidth:ctx=>{
+        const k=edge[ctx.p0DataIndex]?.kind;
+        if(k==='ramp')return 1.2;
+        if(k==='bridge')return 1.4;
+        return 2.5;
+      }
+    }
+  };
+}
+function redrawThermal(){
+  if(thermalChart)thermalChart.destroy();
+  const emptyOpts={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}};
+  let list=[],label='Thermal';
+  const useSeries=thermalViewMode==='series'||!!activeThermalSeriesId;
+  if(useSeries&&activeThermalSeriesId){
+    const ser=thermalSeriesList.find(x=>x.id===activeThermalSeriesId);
+    if(!ser||!ser.memberUids?.length){
+      thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets:[]},options:emptyOpts});
+      updateThermalStatus();return;
+    }
+    list=ser.memberUids.map(uid=>samples.find(x=>x.sampleUid===uid)).filter(Boolean);
+    label=ser.name||'Series';
+  }else if(thermalViewMode==='series'){
+    thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets:[]},options:emptyOpts});
+    updateThermalStatus();return;
+  }else{
+    list=[...samples].sort((a,b)=>{
+      const ea=getEffectiveThermal(a),eb=getEffectiveThermal(b);
+      if(!ea)return 1;if(!eb)return -1;
+      return ea.t0.getTime()-eb.t0.getTime();
+    });
+  }
+  list.forEach(s=>refreshSegmentsForSample(s));
+  const{pts,pointColors}=buildSimpleThermalPolyline(list);
+  if(pts.length<2){
+    thermalChart=new Chart(document.getElementById('thermalCanvas'),{type:'line',data:{datasets:[]},options:emptyOpts});
+    updateThermalStatus();return;
+  }
+  const yR=thermalYRangeFromPoints([pts]);
+  const scales=buildThermalChartScales(yR);
+  thermalChart=new Chart(document.getElementById('thermalCanvas'),{
+    type:'line',
+    data:{datasets:[{
+      label,data:pts,borderColor:THERMAL_BRIDGE_COLOR,borderWidth:2,
+      pointRadius:4,pointHoverRadius:5,pointBackgroundColor:pointColors,pointBorderColor:pointColors,
+      tension:0,spanGaps:false,fill:false
+    }]},
+    options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:8,font:{size:10}}}},scales}
+  });
+  updateThermalStatus();
+}
+
+function getActiveCombine(){return activeCombineId?combineList.find(c=>c.id===activeCombineId):null;}
+function samplesForSeries(seriesId){
+  const ser=thermalSeriesList.find(x=>x.id===seriesId);
+  if(!ser||!ser.memberUids)return [];
+  return ser.memberUids.map(uid=>samples.find(s=>s.sampleUid===uid)).filter(Boolean).filter(s=>s.visible!==false);
+}
+function segmentsForSeries(seriesId){
+  const out=[];
+  samplesForSeries(seriesId).forEach(s=>{
+    const si=samples.indexOf(s);
+    refreshSegmentsForSample(s);
+    const seg=(s.segments||[]).find(x=>x.segType==='measurement')||(s.segments||[])[0];
+    if(seg){const gi=(s.segments||[]).indexOf(seg);out.push({s,si,seg,gi});}
+  });
+  return out;
+}
+function selectedOuterSegments(){
+  return tracesForCombine();
+}
+function tracesForCombine(){
+  const cmb=getActiveCombine();
+  if(!cmb||!Array.isArray(cmb.traces))return[];
+  const out=[];
+  cmb.traces.forEach((t,ti)=>{
+    const s=samples.find(x=>x.sampleUid===t.sampleUid);
+    if(!s)return;
+    const si=samples.indexOf(s);
+    refreshSegmentsForSample(s);
+    const seg=(s.segments||[]).find(x=>x.segType===t.segType)||(s.segments||[])[0];
+    if(!seg)return;
+    const gi=(s.segments||[]).indexOf(seg);
+    /* Merge trace custom settings into a segment-like object */
+    const merged={...seg,
+      legendLabel:t.legendLabel||seg.legendLabel||'',
+      color:t.color||seg.color||'',
+      xOffset:isFinite(t.xOffset)?t.xOffset:(seg.xOffset||0),
+      yOffset:isFinite(t.yOffset)?t.yOffset:(seg.yOffset||0),
+      yGain:(isFinite(t.yGain)&&t.yGain>0)?t.yGain:(seg.yGain||1),
+      combineStackOffset:isFinite(t.combineStackOffset)?t.combineStackOffset:(seg.combineStackOffset||0),
+      _traceIdx:ti
+    };
+    out.push({s,si,seg:merged,gi,t,ti});
+  });
+  return out;
+}
+function pruneCombineMissingSeries(){pruneCombineMissingUids();}
+function pruneCombineMissingUids(){
+  const uids=new Set(samples.map(s=>s.sampleUid));
+  combineList.forEach(c=>{
+    if(Array.isArray(c.traces))c.traces=c.traces.filter(t=>uids.has(t.sampleUid));
+  });
+  if(activeCombineId&&!combineList.some(c=>c.id===activeCombineId))activeCombineId=combineList[0]?.id||null;
+}
+function renderCombineSelect(){
+  const sel=document.getElementById('combineSelect');
+  const nameIn=document.getElementById('combineNameInput');
+  if(sel){
+    sel.innerHTML=combineList.length?combineList.map(c=>`<option value="${esc(c.id)}">${esc(c.name||'Combine')}</option>`).join(''):'<option value="">(no combine)</option>';
+    sel.value=activeCombineId&&combineList.some(c=>c.id===activeCombineId)?activeCombineId:'';
+  }
+  if(nameIn){const cmb=getActiveCombine();nameIn.value=cmb?cmb.name||'':'';nameIn.disabled=!cmb;}
+  renderCombineSamplePicker();
+}
+function setActiveCombineId(id){
+  activeCombineId=id&&combineList.some(c=>c.id===id)?id:null;
+  renderCombineSelect();renderOuterSegmentList();redrawOuterChart();
+}
+function setActiveCombineSeriesId(seriesId){/* deprecated — no-op */}
+function setActiveCombineName(v){
+  const cmb=getActiveCombine();
+  if(!cmb)return;
+  cmb.name=String(v||'').trim()||cmb.name;
+  renderCombineSelect();
+}
+function addNewCombine(){
+  const id=newSampleUid();
+  combineList.push({id,name:`Combine_${combineList.length+1}`,traces:[]});
+  activeCombineId=id;
+  renderAll();
+}
+function createCombineFromActiveSeries(){addCombineFromSeries();}
+function addCombineFromSeries(){
+  const seriesId=activeThermalSeriesId||thermalSeriesList[0]?.id||null;
+  const ser=seriesId?thermalSeriesList.find(x=>x.id===seriesId):null;
+  if(!ser||!ser.memberUids?.length){toast('Please select a series in Thermal History');return;}
+  const id=newSampleUid();
+  const traces=ser.memberUids.map(uid=>{
+    const s=samples.find(x=>x.sampleUid===uid);
+    if(!s)return null;
+    return{sampleUid:uid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0};
+  }).filter(Boolean);
+  combineList.push({id,name:`Combine: ${ser.name}`,traces});
+  activeCombineId=id;
+  renderAll();
+  toast(`Combine created: ${traces.length} traces`);
+}
+function deleteActiveCombine(){
+  if(!activeCombineId){toast('No combine selected');return;}
+  combineList=combineList.filter(c=>c.id!==activeCombineId);
+  activeCombineId=combineList[0]?.id||null;
+  renderAll();
+}
+function onSegAccToggle(ev,si,gi){
+  if(!ev||!ev.target)return;
+  const k=`${si}_${gi}`;
+  if(ev.target.open)openSegmentAcc.add(k);else openSegmentAcc.delete(k);
+}
+function onSampleThermalAccToggle(ev,si){
+  if(!ev||!ev.target)return;
+  const k=`t${si}`;
+  if(ev.target.open)openSampleThermalAcc.add(k);else openSampleThermalAcc.delete(k);
+}
+function renderCombineSamplePicker(){
+  const el=document.getElementById('combineSamplePicker');
+  if(!el)return;
+  const cmb=getActiveCombine();
+  if(!cmb){el.innerHTML='<div class="empty" style="padding:.4rem">Select or create a Combine</div>';return;}
+  if(!samples.length){el.innerHTML='<div class="empty" style="padding:.4rem">No samples loaded</div>';return;}
+  const tracedUids=new Set((cmb.traces||[]).map(t=>t.sampleUid));
+  el.innerHTML=samples.map((s,si)=>{
+    const on=tracedUids.has(s.sampleUid);
+    const T=Number.isFinite(s.tempSetPoint)?s.tempSetPoint.toFixed(1):(s.tempStart!=null?s.tempStart.toFixed(1):'—');
+    return`<div style="display:flex;align-items:center;gap:5px;padding:2px 0;border-bottom:1px solid var(--border)">
+      <input type="checkbox" ${on?'checked':''} onchange="toggleCombineTrace('${esc(s.sampleUid)}',this.checked)" style="flex-shrink:0">
+      <div style="width:8px;height:8px;border-radius:50%;background:${s.color};flex-shrink:0"></div>
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(defaultFileLegend(s))}">${esc(defaultFileLegend(s))}</span>
+      <span style="color:var(--text3);white-space:nowrap">${T}°C</span>
+    </div>`;
+  }).join('');
+}
+function toggleCombineTrace(sampleUid,on){
+  const cmb=getActiveCombine();
+  if(!cmb)return;
+  if(!Array.isArray(cmb.traces))cmb.traces=[];
+  if(on){
+    if(!cmb.traces.some(t=>t.sampleUid===sampleUid)){
+      cmb.traces.push({sampleUid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0});
+    }
+  }else{
+    cmb.traces=cmb.traces.filter(t=>t.sampleUid!==sampleUid);
+  }
+  renderOuterSegmentList();
+  redrawOuterChart();
+}
+function renderOuterSegmentList(){
+  const el=document.getElementById('outerSegList');
+  if(!el)return;
+  const cmb=getActiveCombine();
+  if(!cmb){el.innerHTML='<div class="empty">Create a Combine first (+ New)</div>';return;}
+  const all=tracesForCombine();
+  if(!all.length){el.innerHTML='<div class="empty">Select samples from the list above</div>';return;}
+  el.innerHTML=all.map(({s,seg,ti})=>{
+    const col=seg.color&&seg.color.trim()?seg.color:s.color;
+    const defLeg=autoChartLegend(s);
+    const leg=seg.legendLabel&&String(seg.legendLabel).trim()?String(seg.legendLabel).trim():defLeg;
+    const cso=seg.combineStackOffset||0;
+    return`<div class="outer-seg-row">
+      <span style="min-width:0;display:flex;align-items:center;gap:4px">
+        <button type="button" class="btn" style="padding:1px 5px;font-size:10px" onclick="moveCombineTrace(${ti},-1)">↑</button>
+        <button type="button" class="btn" style="padding:1px 5px;font-size:10px" onclick="moveCombineTrace(${ti},1)">↓</button>
+        <strong>${esc(defLeg)}</strong>
+      </span>
+      <div class="outer-seg-fields">
+        <label>Legend<input class="txt-sm num-wide" type="text" value="${esc(leg)}" placeholder="${esc(defLeg)}" onchange="setCombineTraceProp(${ti},'legendLabel',this.value)"></label>
+        <label>Color<input type="color" value="${esc(col)}" oninput="setCombineTraceProp(${ti},'color',this.value)"></label>
+        <label>Stack off<input class="num num-wide" type="number" step="50" value="${cso}" oninput="setCombineTraceProp(${ti},'combineStackOffset',+this.value)"></label>
+        <label>Δ2θ<input class="num num-wide" type="number" step="0.02" value="${seg.xOffset||0}" oninput="setCombineTraceProp(${ti},'xOffset',+this.value)"></label>
+        <label>ΔI<input class="num num-wide" type="number" step="50" value="${seg.yOffset||0}" oninput="setCombineTraceProp(${ti},'yOffset',+this.value)"></label>
+        <label>Y gain<input class="num num-wide" type="number" step="0.05" min="0.01" value="${(seg.yGain&&seg.yGain>0)?seg.yGain:1}" oninput="setCombineTraceProp(${ti},'yGain',+this.value)"></label>
+      </div>
+    </div>`;
+  }).join('')+`<div class="seg-item" style="color:var(--text3);padding:.4rem .25rem 0;margin-top:4px">traces: ${all.length}</div>`;
+}
+function redrawOuterChart(){
+  if(outerChart)outerChart.destroy();
+  syncOuterChartHeight();
+  const datasets=buildOuterCombineDatasets();
+  const scales=readOuterScaleOpts();
+  const opts={animation:false,parsing:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{boxWidth:8,font:{size:10}},onClick:(e,item,legend)=>{const ds=legend?.chart?.data?.datasets?.[item.datasetIndex];if(!ds)return;const key=ds._key||item.text;const next=!legend.chart.isDatasetVisible(item.datasetIndex);outerHiddenByKey.set(key,!next);legend.chart.setDatasetVisibility(item.datasetIndex,next);legend.chart.update();}}},
+    scales};
+  if(!datasets.length){
+    outerChart=new Chart(document.getElementById('outerCanvas'),{type:'line',data:{datasets:[]},options:{...opts,plugins:{...opts.plugins,legend:{display:false}}}});
+    return;
+  }
+  outerChart=new Chart(document.getElementById('outerCanvas'),{type:'line',data:{datasets},options:opts});
+}
+
+function renderThermalSeriesSelect(){
+  const sel=document.getElementById('thermalSeriesSelect');
+  if(!sel)return;
+  sel.innerHTML='<option value="">(select series)</option>'+thermalSeriesList.map(s=>`<option value="${esc(s.id)}">${esc(s.name||'Series')}</option>`).join('');
+  sel.value=activeThermalSeriesId&&thermalSeriesList.some(x=>x.id===activeThermalSeriesId)?activeThermalSeriesId:'';
+  sel.disabled=thermalViewMode==='per';
+}
+function updateThermalModeButtons(){
+  const a=document.getElementById('thermalModePerBtn');
+  const b=document.getElementById('thermalModeSeriesBtn');
+  if(a)a.classList.toggle('active',thermalViewMode==='per');
+  if(b)b.classList.toggle('active',thermalViewMode==='series');
+}
+function setThermalViewMode(m){
+  thermalViewMode=m;
+  if(m==='series'){
+    if(!thermalSeriesList.length){toast('Create a series (Edit series)');thermalViewMode='per';}
+    else if(!activeThermalSeriesId||!thermalSeriesList.some(x=>x.id===activeThermalSeriesId))activeThermalSeriesId=thermalSeriesList[0].id;
+  }
+  updateThermalModeButtons();renderThermalSeriesSelect();redrawThermal();
+}
+function setActiveThermalSeriesId(v){
+  activeThermalSeriesId=v&&thermalSeriesList.some(x=>x.id===v)?v:null;
+  if(activeThermalSeriesId)thermalViewMode='series';
+  updateThermalModeButtons();renderThermalSeriesSelect();redrawThermal();updateThermalStatus();
+}
+function pruneThermalSeriesMissingMembers(){
+  const uids=new Set(samples.map(s=>s.sampleUid));
+  thermalSeriesList.forEach(ser=>{ser.memberUids=(ser.memberUids||[]).filter(uid=>uids.has(uid));});
+  thermalSeriesList=thermalSeriesList.filter(ser=>ser.memberUids.length);
+  if(activeThermalSeriesId&&!thermalSeriesList.some(x=>x.id===activeThermalSeriesId))activeThermalSeriesId=thermalSeriesList[0]?.id||null;
+}
+function setThermalTimeStartOverride(i,v){
+  const d=parseDatetimeLocalToDate(v);
+  samples[i].thermalTimeStartOverride=d?d.toISOString():null;
+  refreshSegmentsForSample(samples[i]);renderAll();
+}
+function setThermalTimeEndOverride(i,v){
+  const d=parseDatetimeLocalToDate(v);
+  samples[i].thermalTimeEndOverride=d?d.toISOString():null;
+  refreshSegmentsForSample(samples[i]);renderAll();
+}
+function setSampleThermalTemp(i,v){
+  const n=parseFloat(v);
+  const s=samples[i];
+  if(v===''||v==null||isNaN(n)){
+    s.thermalTempOverride=null;
+    s.thermalTempStartOverride=null;
+    s.thermalTempEndOverride=null;
+    const temps=resolveSampleTemps(s.rawName||s.name||'');
+    s.tempSetPoint=temps.tempSetPoint;s.tempStart=temps.tempStart;s.tempEnd=temps.tempEnd;
+  }else{
+    s.thermalTempOverride=n;
+    s.thermalTempStartOverride=n;
+    s.thermalTempEndOverride=n;
+    s.tempStart=n;s.tempEnd=n;s.tempSetPoint=n;
+  }
+  refreshSegmentsForSample(s);renderAll();
+}
+function setThermalTempStartOverride(i,v){setSampleThermalTemp(i,v);}
+function setThermalTempEndOverride(i,v){setSampleThermalTemp(i,v);}
+function openSeriesEditorModal(){
+  const ser=activeThermalSeriesId?thermalSeriesList.find(x=>x.id===activeThermalSeriesId):null;
+  seriesDraftOrder=ser&&ser.memberUids?[...ser.memberUids]:[];
+  document.getElementById('seriesEditName').value=ser?ser.name:'';
+  document.getElementById('seriesEditFolder').value=ser?normalizeFolderPath(ser.folderPath):'';
+  seriesEditorTargetId=ser?ser.id:null;
+  renderSeriesEditorMemberList();
+  document.getElementById('seriesEditorModal').classList.add('show');
+}
+function closeSeriesEditorModal(){document.getElementById('seriesEditorModal').classList.remove('show');}
+function renderSeriesEditorMemberList(){
+  const el=document.getElementById('seriesEditorMemberList');
+  if(!el)return;
+  const orderHtml=seriesDraftOrder.length?`<div style="margin:.5rem 0;font-size:11px;color:var(--text3)">Order (top = first segment)</div>`+seriesDraftOrder.map((uid,oi)=>{
+    const s=samples.find(x=>x.sampleUid===uid);
+    const nm=s?esc(defaultFileLegend(s)):esc(uid);
+    return`<div class="ctrl-row" style="margin:4px 0;align-items:center"><span style="min-width:18px">${oi+1}</span><span style="flex:1;min-width:0;word-break:break-all">${nm}</span><button type="button" class="btn" onclick="moveSeriesDraft(${oi},-1)">Up</button><button type="button" class="btn" onclick="moveSeriesDraft(${oi},1)">Down</button><button type="button" class="btn warn" onclick="removeSeriesDraftAt(${oi})">x</button></div>`;
+  }).join(''):'<div class="empty" style="padding:.5rem">No samples in series yet — check samples below</div>';
+  const pick=!samples.length?'<div class="empty">No samples loaded</div>':samples.map((s,si)=>{
+    const on=seriesDraftOrder.includes(s.sampleUid);
+    const fn=defaultFileLegend(s);
+    return`<div class="ctrl-row" style="margin:3px 0;align-items:flex-start"><label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;flex:1;min-width:0"><input type="checkbox" ${on?'checked':''} onchange="toggleSeriesDraftMemberByIdx(${si},this.checked)" style="margin-top:2px"><span style="word-break:break-all;min-width:0">${esc(fn)}</span></label></div>`;
+  }).join('');
+  el.innerHTML=orderHtml+'<div style="margin-top:.75rem;font-size:11px;color:var(--text3)">Include samples</div>'+pick;
+}
+function toggleSeriesDraftMemberByIdx(sampleIdx,on){
+  const s=samples[sampleIdx];
+  if(!s||!s.sampleUid)return;
+  toggleSeriesDraftMember(s.sampleUid,!!on);
+}
+function toggleSeriesDraftMember(uid,on){
+  if(on){if(!seriesDraftOrder.includes(uid))seriesDraftOrder.push(uid);}
+  else seriesDraftOrder=seriesDraftOrder.filter(x=>x!==uid);
+  renderSeriesEditorMemberList();
+}
+function removeSeriesDraftAt(oi){
+  seriesDraftOrder.splice(oi,1);
+  renderSeriesEditorMemberList();
+}
+function moveSeriesDraft(oi,dir){
+  const ni=oi+dir;
+  if(ni<0||ni>=seriesDraftOrder.length)return;
+  const t=seriesDraftOrder[oi];
+  seriesDraftOrder[oi]=seriesDraftOrder[ni];
+  seriesDraftOrder[ni]=t;
+  renderSeriesEditorMemberList();
+}
+function createOrUpdateSeriesFromEditor(){
+  const name=document.getElementById('seriesEditName').value.trim()||`Series_${stamp()}`;
+  const folderPath=normalizeFolderPath(document.getElementById('seriesEditFolder').value);
+  if(!seriesDraftOrder.length){toast('Select at least one sample');return;}
+  if(seriesEditorTargetId){
+    const ser=thermalSeriesList.find(x=>x.id===seriesEditorTargetId);
+    if(!ser){toast('Series not found');return;}
+    ser.name=name;ser.memberUids=[...seriesDraftOrder];ser.folderPath=folderPath;activeThermalSeriesId=ser.id;
+  }else{
+    const id=newSampleUid();
+    thermalSeriesList.push({id,name,folderPath,memberUids:[...seriesDraftOrder]});
+    activeThermalSeriesId=id;
+  }
+  closeSeriesEditorModal();
+  thermalViewMode='series';
+  updateThermalModeButtons();renderThermalSeriesSelect();renderAll();
+  toast('Series saved');
+}
+function openSeriesDbModal(){
+  const ser=activeThermalSeriesId?thermalSeriesList.find(x=>x.id===activeThermalSeriesId):null;
+  if(!ser||!ser.memberUids.length){toast('Select or create a series first');return;}
+  document.getElementById('seriesDbName').value=ser.name||`Series_${stamp()}`;
+  document.getElementById('seriesDbFolder').value=normalizeFolderPath(ser.folderPath);
+  document.getElementById('seriesDbModal').classList.add('show');
+}
+function closeSeriesDbModal(){document.getElementById('seriesDbModal').classList.remove('show');}
+async function confirmSaveSeriesToDb(){
+  const name=document.getElementById('seriesDbName').value.trim();
+  if(!name){toast('Enter a name');return;}
+  const folderPath=normalizeFolderPath(document.getElementById('seriesDbFolder').value);
+  const ser=thermalSeriesList.find(x=>x.id===activeThermalSeriesId);
+  if(!ser||!ser.memberUids.length){toast('No active series');return;}
+  closeSeriesDbModal();
+  try{
+    await adapter.saveThermalSeries({name,folderPath,memberUids:[...ser.memberUids]});
+    ser.folderPath=folderPath;
+    await refreshDbPanels();
+    toast(`Saved series to DB: ${name}`);
+  }catch(e){
+    console.error(e);
+    toast('Series save failed: '+(e.message||e));
+  }
+}
+async function loadThermalSeriesFromDb(id){
+  try{
+    const rec=await adapter.getThermalSeries(id);
+    if(!rec||!Array.isArray(rec.memberUids))return;
+    const nid=newSampleUid();
+    thermalSeriesList.push({id:nid,name:rec.name||'Loaded',folderPath:normalizeFolderPath(rec.folderPath),memberUids:[...rec.memberUids]});
+    activeThermalSeriesId=nid;
+    thermalViewMode='series';
+    updateThermalModeButtons();renderThermalSeriesSelect();renderAll();
+    toast(`Loaded series: ${rec.name}`);
+  }catch(e){toast(e.message);}
+}
+async function deleteThermalSeriesFromDb(id,e){
+  if(e)e.stopPropagation();
+  if(!confirm('Delete this saved series from DB?'))return;
+  try{await adapter.deleteThermalSeries(id);await refreshDbPanels();toast('Deleted');}catch(err){toast(err.message);}
+}
+
+function updateThermalStatus(){
+  const el=document.getElementById('thermalStatus');
+  if(!el)return;
+  const n=samples.filter(s=>getEffectiveThermal(s)).length;
+  const ser=activeThermalSeriesId?thermalSeriesList.find(x=>x.id===activeThermalSeriesId):null;
+  let msg=`${n} sample(s) with thermal data.`;
+  if(thermalViewMode==='series'){
+    if(!ser)msg+=' Mode: Series — create/select a series (Edit series or Series from all).';
+    else msg+=` Series "${ser.name}" (${ser.memberUids.length} members).`;
+  }else msg+=' Mode: Per file.';
+  if(!n)msg+=' Set start/end time and T (°C). HDF5/RAS times from file; T from filename or RAS header.';
+  el.textContent=msg;
+}
+function createSeriesFromAllSamples(){
+  const uids=samples.filter(s=>s.visible).map(s=>s.sampleUid);
+  if(!uids.length){toast('No samples loaded');return;}
+  const id=newSampleUid();
+  thermalSeriesList.push({id,name:`Series_${stamp()}`,folderPath:'',memberUids:uids});
+  activeThermalSeriesId=id;
+  thermalViewMode='series';
+  updateThermalModeButtons();renderThermalSeriesSelect();renderAll();
+  toast(`Series created (${uids.length} samples). Switch Thermal to Series if needed.`);
+}
+function setXrdLegend(i,v){samples[i].xrdLegendLabel=v;redrawXrd();}
+function setXrdColor(i,v){samples[i].color=v;redrawXrd();renderXrdTraceList();}
+function setXrdSourceMode(v){xrdSourceMode=(v==='series'?'series':'all');renderXrdTraceList();renderOuterSegmentList();redrawXrd();}
+function setXrdTraceVisible(i,checked){const s=samples[i];if(!s)return;xrdHiddenByKey.set(xrdKey(s),!checked);redrawXrd();}
+async function setXrdTraceMetaByUid(uid,field,value){
+  const s=samples.find(x=>x.sampleUid===uid);
+  if(!s)return;
+  const keyName=(s.rawName&&String(s.rawName).trim())||(s.name&&String(s.name).trim())||'';
+  const rec=(dbFiles||[]).find(f=>String(f?.name||'').trim()===keyName);
+  const next={...(rec||{name:keyName,rawText:'',rowCount:s.tth?.length||0,folderPath:'',sampleLabel:'',tags:[]})};
+  if(field==='sampleLabel'){
+    next.sampleLabel=String(value||'').trim();
+    s.name=next.sampleLabel||s.name;
+  }else if(field==='capillarySize'){
+    const n=parseFloat(value);
+    next.capillarySize=Number.isFinite(n)?n:null;
+    s.meta=s.meta||{};
+    s.meta.capillarySize=next.capillarySize;
+  }else if(field==='measurementTimeMin'){
+    const n=parseFloat(value);
+    next.measurementTimeMin=Number.isFinite(n)?n:null;
+    s.meta=s.meta||{};
+    s.meta.measurementTimeMin=next.measurementTimeMin;
+  }else if(field==='measurementStartIso'){
+    const iso=dbLocalInputToIso(value);
+    next.measurementStartIso=iso;
+    if(iso)s.timeStart=new Date(iso);
+  }else if(field==='measurementEndIso'){
+    const iso=dbLocalInputToIso(value);
+    next.measurementEndIso=iso;
+    if(iso)s.timeEnd=new Date(iso);
+  }else if(field==='tempC'){
+    const n=parseFloat(value);
+    next.tempC=Number.isFinite(n)?n:null;
+    if(Number.isFinite(n)){s.tempSetPoint=n;s.tempStart=n;s.tempEnd=n;}
+  }else if(field==='tags'){
+    const tags=normalizeTags(value);
+    next.tags=tags;
+    s.meta=s.meta||{};
+    s.meta.tags=tags;
+  }
+  try{
+    if(rec&&rec.id!=null)await adapter.saveFile({...rec,...next,id:rec.id});
+    else if(next.rawText)await adapter.saveFile(next);
+    dbFiles=await adapter.listFiles().catch(()=>dbFiles);
+  }catch(e){console.error(e);}
+  redrawXrd();
+  redrawOuterChart();
+  renderXrdTraceList();
+  renderOuterSegmentList();
+  renderDbFileList();
+}
+function setXrdTraceVisibleByUid(uid,checked){
+  const s=samples.find(x=>x.sampleUid===uid);
+  if(!s)return;
+  xrdHiddenByKey.set(xrdKey(s),!checked);
+  redrawXrd();
+  renderXrdTraceList();
+}
+function renderAll(){renderLegendFormatUi();renderSampleList();renderXrdTraceList();renderThermalSeriesSelect();renderCombineSelect();updateThermalModeButtons();renderCombineSamplePicker();renderOuterSegmentList();updateThermalStatus();redrawXrd();redrawThermal();}
+function toggleVisible(i){samples[i].visible=!samples[i].visible;renderAll();}
+function removeSample(i){samples.splice(i,1);openSegmentAcc.clear();openSampleThermalAcc.clear();pruneThermalSeriesMissingMembers();pruneCombineMissingSeries();samples.forEach((s,j)=>s.color=COLORS[j%COLORS.length]);renderAll();}
+function setScanRate(i,v){const n=parseFloat(v);samples[i].scanRate=isNaN(n)?null:n;refreshSegmentsForSample(samples[i]);renderAll();}
+function setTempSetPoint(i,v){setSampleThermalTemp(i,v);}
+function setRampStart(i,v){const n=parseFloat(v);samples[i].rampStartTemp=isNaN(n)?null:n;refreshSegmentsForSample(samples[i]);renderAll();}
+function setLayout(l){layout=l;const ml=document.getElementById('mainLayout');ml.classList.toggle('lr',l==='lr');document.getElementById('xrdPanel').style.display=l==='thermal'?'none':'block';document.getElementById('thermalPanel').style.display=l==='xrd'?'none':'block';renderAll();}
+function setXrdMode(m){xrdMode=m;redrawXrd();}
+function toggleXrdOffsetMode(){xrdOffsetMode=xrdOffsetMode==='equal'?'manual':'equal';updateXrdModeButtons();renderSampleList();redrawXrd();}
+function toggleXrdGainMode(){xrdGainMode=xrdGainMode==='equal'?'manual':'equal';updateXrdModeButtons();renderSampleList();redrawXrd();}
+function setManualOffset(i,v){const n=parseFloat(v);samples[i].xrdOffsetManual=isNaN(n)?0:n;redrawXrd();}
+function setManualGain(i,v){const n=parseFloat(v);samples[i].intensityGainManual=(isNaN(n)||n<=0)?1:n;redrawXrd();}
+function setUnit(u){timeUnit=u;renderAll();}
+function setOuterSel(si,gi,v){samples[si].segments[gi].selectedOuter=!!v;renderOuterSegmentList();redrawOuterChart();}
+function setCombineTraceProp(ti,key,val){
+  const cmb=getActiveCombine();
+  if(!cmb||!cmb.traces||!cmb.traces[ti])return;
+  cmb.traces[ti][key]=val;
+  renderOuterSegmentList();
+  redrawOuterChart();
+}
+function moveCombineTrace(ti,dir){
+  const cmb=getActiveCombine();
+  if(!cmb||!cmb.traces)return;
+  const ni=ti+dir;
+  if(ni<0||ni>=cmb.traces.length)return;
+  const tmp=cmb.traces[ti];
+  cmb.traces[ti]=cmb.traces[ni];
+  cmb.traces[ni]=tmp;
+  renderOuterSegmentList();
+  redrawOuterChart();
+}
+function setSegXoff(si,gi,v){const n=parseFloat(v);samples[si].segments[gi].xOffset=isNaN(n)?0:n;redrawOuterChart();redrawThermal();}
+function setSegYoff(si,gi,v){const n=parseFloat(v);samples[si].segments[gi].yOffset=isNaN(n)?0:n;redrawOuterChart();redrawThermal();}
+function setSegYgain(si,gi,v){
+  const n=parseFloat(v);
+  samples[si].segments[gi].yGain=(isNaN(n)||n<=0)?1:n;
+  redrawOuterChart();
+  redrawThermal();
+}
+function setSegLegend(si,gi,v){samples[si].segments[gi].legendLabel=v;redrawOuterChart();}
+function setSegColor(si,gi,v){samples[si].segments[gi].color=v;redrawOuterChart();}
+function setSegCombineStackOffset(si,gi,v){const n=parseFloat(v);samples[si].segments[gi].combineStackOffset=isNaN(n)?0:n;redrawOuterChart();}
+
+function downloadText(filename,text){
+  const blob=new Blob([text],{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);
+}
+function stamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;}
+function chartExportPixelRatio(){return 2;}
+function chartHasDrawableData(chart){
+  if(!chart?.data?.datasets?.length)return false;
+  return chart.data.datasets.some(ds=>{
+    if(ds.hidden)return false;
+    const d=ds.data;
+    return Array.isArray(d)&&d.length>0;
+  });
+}
+/** Ensure hidden/zero-size canvas wrappers get size before export. Returns restore fn. */
+function prepareChartForExport(chart,fallbackHeight){
+  if(!chart?.canvas)return()=>{};
+  const wrap=chart.canvas.parentElement;
+  const saved={};
+  if(wrap&&wrap.offsetWidth<80){
+    saved.el=wrap;
+    saved.width=wrap.style.width;
+    saved.height=wrap.style.height;
+    saved.display=wrap.style.display;
+    saved.visibility=wrap.style.visibility;
+    saved.position=wrap.style.position;
+    saved.left=wrap.style.left;
+    saved.top=wrap.style.top;
+    saved.zIndex=wrap.style.zIndex;
+    wrap.style.width='960px';
+    wrap.style.height=(fallbackHeight||420)+'px';
+    wrap.style.display='block';
+    wrap.style.visibility='hidden';
+    wrap.style.position='fixed';
+    wrap.style.left='-12000px';
+    wrap.style.top='0';
+    wrap.style.zIndex='-1';
+  }
+  chart.resize();
+  chart.update('none');
+  return()=>{
+    if(!saved.el)return;
+    saved.el.style.width=saved.width;
+    saved.el.style.height=saved.height;
+    saved.el.style.display=saved.display;
+    saved.el.style.visibility=saved.visibility;
+    saved.el.style.position=saved.position;
+    saved.el.style.left=saved.left;
+    saved.el.style.top=saved.top;
+    saved.el.style.zIndex=saved.zIndex;
+    chart.resize();
+    chart.update('none');
+  };
+}
+function chartPngRaw(chart,fallbackHeight){
+  if(!chart)return null;
+  const restore=prepareChartForExport(chart,fallbackHeight);
+  try{
+    return chart.toBase64Image('image/png',chartExportPixelRatio());
+  }finally{
+    restore();
+  }
+}
+function chartPngWithBackground(chart,fallbackHeight,bg='#ffffff'){
+  const raw=chartPngRaw(chart,fallbackHeight);
+  if(!raw)return Promise.resolve(null);
+  if(!bg)return Promise.resolve(raw);
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas');
+      c.width=img.width;
+      c.height=img.height;
+      const ctx=c.getContext('2d');
+      ctx.fillStyle=bg;
+      ctx.fillRect(0,0,c.width,c.height);
+      ctx.drawImage(img,0,0);
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror=()=>resolve(raw);
+    img.src=raw;
+  });
+}
+async function exportChartImage(chart,base,format,opts={}){
+  if(!chart){toast(opts.emptyMsg||'Chart not ready');return;}
+  if(!chartHasDrawableData(chart)){toast(opts.emptyMsg||'No data to export');return;}
+  const url=await chartPngWithBackground(chart,opts.fallbackHeight,opts.background||'#ffffff');
+  if(!url){toast('Export failed');return;}
+  if(format==='png'){
+    const a=document.createElement('a');
+    a.href=url;
+    a.download=`${base}.png`;
+    a.click();
+    toast('PNG saved');
+    return;
+  }
+  const P=window.jspdf?.jsPDF;
+  if(!P){toast('jsPDF not loaded (check network)');return;}
+  const img=new Image();
+  img.onload=()=>{
+    const pdf=new P({orientation:img.width>img.height?'landscape':'portrait',unit:'pt',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(),ph=pdf.internal.pageSize.getHeight();
+    const sc=Math.min((pw-40)/img.width,(ph-40)/img.height);
+    const w=img.width*sc,h=img.height*sc;
+    pdf.addImage(url,'PNG',(pw-w)/2,(ph-h)/2,w,h);
+    pdf.save(`${base}.pdf`);
+    toast('PDF saved');
+  };
+  img.onerror=()=>toast('PDF export failed');
+  img.src=url;
+}
+async function exportXrdChart(format){
+  if(!xrdChart){toast('XRD chart not ready');return;}
+  await exportChartImage(xrdChart,`xrd_pattern_${stamp()}`,format,{fallbackHeight:xrdChartHeight,emptyMsg:'Load samples with XRD data first'});
+}
+async function exportThermalChart(format){
+  if(!thermalChart){toast('Thermal chart not ready');return;}
+  await exportChartImage(thermalChart,`thermal_history_${stamp()}`,format,{fallbackHeight:300,emptyMsg:'Set thermal times/temperatures or select a series with data'});
+}
+async function exportCombineChart(format){
+  if(!outerChart){toast('Combine chart not ready');return;}
+  const comb=getActiveCombine();
+  const slug=comb?.name?comb.name.replace(/[^\w.-]+/g,'_').slice(0,40):'combine';
+  await exportChartImage(outerChart,`xrd_combine_${slug}_${stamp()}`,format,{fallbackHeight:outerChartHeight,emptyMsg:'Create a combine and select traces from the linked series'});
+}
+function exportOuterChart(format){exportCombineChart(format);}
+
+function serializeProject(){
+  return{version:4,kind:'xrd_th_db',savedAt:new Date().toISOString(),layout,xrdMode,timeUnit,xrdOffsetMode,xrdGainMode,xrdSourceMode,legendFormatParts:[...legendFormatParts],thermalViewMode,thermalSeriesList,activeThermalSeriesId,combineList,activeCombineId,...readOuterChartSettingsFromDom(),samples:samples.map(s=>({...s,timeStart:s.timeStart?s.timeStart.toISOString():null,timeEnd:s.timeEnd?s.timeEnd.toISOString():null}))};
+}
+function serializeDataOnly(){
+  return{version:2,kind:'xrd_th_data',savedAt:new Date().toISOString(),samples:samples.map(s=>({sampleUid:s.sampleUid,name:s.name,rawName:s.rawName,tth:s.tth,intensity:s.intensity,tempStart:s.tempStart,tempEnd:s.tempEnd,timeStart:s.timeStart?s.timeStart.toISOString():null,timeEnd:s.timeEnd?s.timeEnd.toISOString():null,thermalTimeStartOverride:s.thermalTimeStartOverride,thermalTimeEndOverride:s.thermalTimeEndOverride,thermalTempStartOverride:s.thermalTempStartOverride,thermalTempEndOverride:s.thermalTempEndOverride}))};
+}
+function hydrateProject(payload,{replace=true}={}){
+  if(!payload||!Array.isArray(payload.samples)){alert('Invalid JSON');return;}
+  if(replace)samples=[];
+  layout=payload.layout||layout;xrdMode=payload.xrdMode||xrdMode;timeUnit=payload.timeUnit||timeUnit;
+  xrdSourceMode=payload.xrdSourceMode==='series'?'series':'all';
+  xrdOffsetMode=payload.xrdOffsetMode==='manual'?'manual':'equal';
+  xrdGainMode=payload.xrdGainMode==='manual'?'manual':'equal';
+  legendFormatParts=normalizeLegendFormatParts(payload.legendFormatParts);
+  thermalViewMode=payload.thermalViewMode==='series'?'series':'per';
+  thermalSeriesList=Array.isArray(payload.thermalSeriesList)?payload.thermalSeriesList.map(x=>({id:x.id||newSampleUid(),name:x.name||'Series',folderPath:normalizeFolderPath(x.folderPath),memberUids:Array.isArray(x.memberUids)?[...x.memberUids]:[]})).filter(x=>x.memberUids.length):[];
+  activeThermalSeriesId=thermalSeriesList.some(x=>x.id===payload.activeThermalSeriesId)?payload.activeThermalSeriesId:(thermalSeriesList[0]?.id||null);
+  if(thermalViewMode==='series'&&(!thermalSeriesList.length||!activeThermalSeriesId))thermalViewMode='per';
+  combineList=Array.isArray(payload.combineList)?payload.combineList.map(c=>({
+    id:c.id||newSampleUid(),
+    name:c.name||'Combine',
+    traces:Array.isArray(c.traces)?c.traces.map(t=>({
+      sampleUid:t.sampleUid||'',
+      segType:t.segType||'measurement',
+      legendLabel:t.legendLabel||'',
+      color:t.color||'',
+      xOffset:isFinite(t.xOffset)?t.xOffset:0,
+      yOffset:isFinite(t.yOffset)?t.yOffset:0,
+      yGain:(isFinite(t.yGain)&&t.yGain>0)?t.yGain:1,
+      combineStackOffset:isFinite(t.combineStackOffset)?t.combineStackOffset:0
+    })):[]
+  })):[];
+  activeCombineId=combineList.some(c=>c.id===payload.activeCombineId)?payload.activeCombineId:(combineList[0]?.id||null);
+  if(!combineList.length){
+    combineList=[{id:newSampleUid(),name:'Combine_1',traces:[]}];
+    activeCombineId=combineList[0].id;
+  }
+  payload.samples.forEach((src,idx)=>{
+    const s={...src,color:src.color||COLORS[(samples.length+idx)%COLORS.length],visible:src.visible!==false,tempSetPoint:Number.isFinite(src.tempSetPoint)?src.tempSetPoint:null,timeStart:src.timeStart?new Date(src.timeStart):null,timeEnd:src.timeEnd?new Date(src.timeEnd):null};
+    ensureSampleUid(s);
+    if(!Array.isArray(s.segments))s.segments=[];
+    ensureXrdControls(s);
+    refreshSegmentsForSample(s);
+    if(Array.isArray(src.segments)&&src.segments.length){
+      const map=new Map(src.segments.map(x=>[x.segType,x]));
+      s.segments=s.segments.map(seg=>{const p=map.get(seg.segType);return p?{...seg,selectedOuter:!!p.selectedOuter,visible:p.visible!==false,xOffset:isFinite(p.xOffset)?p.xOffset:0,yOffset:isFinite(p.yOffset)?p.yOffset:0,yGain:(isFinite(p.yGain)&&p.yGain>0)?p.yGain:1,color:p.color||'',legendLabel:p.legendLabel||'',combineStackOffset:isFinite(p.combineStackOffset)?p.combineStackOffset:0}:seg;});
+    }
+    samples.push(s);
+  });
+  samples.sort(naturalCompareSamples);samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
+  pruneThermalSeriesMissingMembers();
+  pruneCombineMissingSeries();
+  applyOuterChartSettingsToDom(payload);
+  applyXrdChartSettingsToDom(payload);
+  samples.forEach(ensureSampleThermal);
+  updateXrdModeButtons();setLayout(layout);renderAll();
+}
+function exportProjectJson(){downloadText(`xrd_th_project_${stamp()}.json`,JSON.stringify(serializeProject()));}
+function importProjectJson(file){
+  const r=new FileReader();
+  r.onload=async e=>{
+    try{
+      const payload=JSON.parse(e.target.result);
+      hydrateProject(payload,{replace:true});
+      const res=await ensureProjectSamplesCached(payload?.samples);
+      toast(res.added>0?`Project imported (+${res.added} file(s) cached)`:'Project imported');
+    }catch(_e){alert('Invalid JSON');}
+  };
+  r.readAsText(file,'UTF-8');
+}
+function exportDataJson(){downloadText(`xrd_th_data_${stamp()}.json`,JSON.stringify(serializeDataOnly()));}
+function importDataJson(file){const r=new FileReader();r.onload=e=>{try{hydrateProject(JSON.parse(e.target.result),{replace:false});toast('Data imported');}catch(_e){alert('Invalid JSON');}};r.readAsText(file,'UTF-8');}
+
+function dbFileTempC(f){
+  if(f.tempC!=null&&Number.isFinite(f.tempC))return f.tempC;
+  return parseTempFromFilename(f.name||'');
+}
+function dbFileCapillarySize(f){
+  const v=f&&f.capillarySize;
+  if(v==null||v==='')return null;
+  const n=parseFloat(v);
+  return Number.isFinite(n)?n:null;
+}
+function dbFileMeasurementStartIso(f){
+  const s=f&&f.measurementStartIso;
+  if(!s)return null;
+  const d=new Date(s);
+  return isNaN(d.getTime())?null:d.toISOString();
+}
+function dbFileMeasurementEndIso(f){
+  const s=f&&f.measurementEndIso;
+  if(!s)return null;
+  const d=new Date(s);
+  return isNaN(d.getTime())?null:d.toISOString();
+}
+function dbIsoToLocalInput(iso){
+  if(!iso)return'';
+  const d=new Date(iso);
+  if(isNaN(d.getTime()))return'';
+  const z=n=>String(n).padStart(2,'0');
+  return`${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`;
+}
+function dbLocalInputToIso(v){
+  if(!v)return null;
+  const d=new Date(v);
+  return isNaN(d.getTime())?null:d.toISOString();
+}
+function dbIsoShortLabel(iso){
+  if(!iso)return'Unknown';
+  const d=new Date(iso);
+  return isNaN(d.getTime())?'Unknown':d.toLocaleString();
+}
+function dbFileMeasurementTimeMin(f){
+  const v=f&&f.measurementTimeMin;
+  if(v!=null&&v!==''){
+    const n=parseFloat(v);
+    if(Number.isFinite(n))return n;
+  }
+  const t0=dbFileMeasurementStartIso(f),t1=dbFileMeasurementEndIso(f);
+  if(t0&&t1){
+    const d0=new Date(t0).getTime(),d1=new Date(t1).getTime();
+    if(Number.isFinite(d0)&&Number.isFinite(d1)&&d1>d0)return (d1-d0)/60000;
+  }
+  return null;
+}
+function dbFileMeasurementStartSort(f){
+  const iso=dbFileMeasurementStartIso(f);
+  if(!iso)return Infinity;
+  return new Date(iso).getTime();
+}
+function dbFileMeasurementEndSort(f){
+  const iso=dbFileMeasurementEndIso(f);
+  if(!iso)return Infinity;
+  return new Date(iso).getTime();
+}
+function dbFileMeasurementStartLabel(f){
+  return dbIsoShortLabel(dbFileMeasurementStartIso(f));
+}
+function dbFileMeasurementEndLabel(f){
+  return dbIsoShortLabel(dbFileMeasurementEndIso(f));
+}
+function dbFileMeasurementTimeMinManual(f){
+  const v=f&&f.measurementTimeMin;
+  if(v==null||v==='')return null;
+  const n=parseFloat(v);
+  return Number.isFinite(n)?n:null;
+}
+function dbFileSampleLabel(f){
+  return(f.sampleLabel!=null&&String(f.sampleLabel).trim())?String(f.sampleLabel).trim():'';
+}
+function normalizeLegendFormatParts(parts){
+  const allowed=new Set(LEGEND_FORMAT_OPTIONS.map(o=>o.id));
+  if(!Array.isArray(parts))return['filename'];
+  const out=parts.filter(id=>allowed.has(id));
+  return out.length?out:['filename'];
+}
+function legendPartValue(s,partId){
+  if(!s)return'';
+  const meta=xrdMetaRecordForSample(s);
+  if(partId==='sample')return dbFileSampleLabel(meta)||'';
+  if(partId==='measStart'){
+    const iso=dbFileMeasurementStartIso(meta);
+    return iso?dbIsoShortLabel(iso):'';
+  }
+  if(partId==='measTime'){
+    const m=dbFileMeasurementTimeMin(meta);
+    return Number.isFinite(m)?`${m.toFixed(2)} min`:'';
+  }
+  if(partId==='temp'){
+    const t=dbFileTempC(meta);
+    return Number.isFinite(t)?`${t.toFixed(1)}°C`:'';
+  }
+  if(partId==='filename'){
+    if(s.rawName!=null&&String(s.rawName).trim())return String(s.rawName).trim();
+    return s.name!=null?String(s.name).trim():'';
+  }
+  return'';
+}
+function autoChartLegend(s){
+  const parts=(legendFormatParts||[]).map(id=>legendPartValue(s,id)).filter(Boolean);
+  if(parts.length)return parts.join(' | ');
+  return defaultFileLegend(s);
+}
+function chartLegendForSample(s){
+  if(!s)return'';
+  if(s.xrdLegendLabel!=null&&String(s.xrdLegendLabel).trim())return String(s.xrdLegendLabel).trim();
+  return autoChartLegend(s);
+}
+function chartLegendForSegment(s,seg){
+  if(seg?.legendLabel&&String(seg.legendLabel).trim())return String(seg.legendLabel).trim();
+  return chartLegendForSample(s);
+}
+function renderLegendFormatUi(){
+  const el=document.getElementById('legendFormatUi');
+  if(!el)return;
+  const parts=new Set(legendFormatParts||[]);
+  el.innerHTML=`<span class="legend-format-label">Graph legend</span>`+LEGEND_FORMAT_OPTIONS.map(o=>
+    `<label class="legend-part"><input type="checkbox" ${parts.has(o.id)?'checked':''} onchange="toggleLegendFormatPart('${o.id}',this.checked)">${esc(o.label)}</label>`
+  ).join('');
+}
+function toggleLegendFormatPart(id,checked){
+  const allowed=new Set(LEGEND_FORMAT_OPTIONS.map(o=>o.id));
+  if(!allowed.has(id))return;
+  const set=new Set(legendFormatParts||[]);
+  if(checked)set.add(id);else set.delete(id);
+  legendFormatParts=normalizeLegendFormatParts([...set]);
+  renderLegendFormatUi();
+  renderXrdTraceList();
+  renderOuterSegmentList();
+  redrawXrd();
+  redrawOuterChart();
+}
+function normalizeTags(value){
+  if(Array.isArray(value))return [...new Set(value.map(x=>String(x||'').trim()).filter(Boolean))];
+  if(typeof value==='string')return [...new Set(value.split(',').map(x=>x.trim()).filter(Boolean))];
+  return [];
+}
+function dbFileTags(f){
+  return normalizeTags(f?.tags);
+}
+function dbFileDateKey(f){
+  const t=new Date(f?.savedAt||0).getTime();
+  if(!Number.isFinite(t)||t<=0)return'Unknown date';
+  const d=new Date(t);
+  const p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+}
+function dbTreeLabel(field,f){
+  if(field==='sample')return dbFileSampleLabel(f)||'Unknown sample';
+  if(field==='capillary'){
+    const c=dbFileCapillarySize(f);
+    return Number.isFinite(c)?`${c.toFixed(3)} mm`:'Unknown capillary';
+  }
+  if(field==='measStart')return dbFileMeasurementStartLabel(f);
+  if(field==='measEnd')return dbFileMeasurementEndLabel(f);
+  if(field==='measTime'){
+    const m=dbFileMeasurementTimeMin(f);
+    return Number.isFinite(m)?`${m.toFixed(2)} min`:'Unknown meas-time';
+  }
+  if(field==='date')return dbFileDateKey(f);
+  if(field==='temp'){
+    const t=dbFileTempC(f);
+    return Number.isFinite(t)?`${t.toFixed(1)}°C`:'Unknown temp';
+  }
+  return'Unknown';
+}
+function dbTreeSortValue(field,f){
+  if(field==='sample')return (dbFileSampleLabel(f)||'').toLowerCase();
+  if(field==='capillary'){const c=dbFileCapillarySize(f);return Number.isFinite(c)?c:Infinity;}
+  if(field==='measStart')return dbFileMeasurementStartSort(f);
+  if(field==='measEnd')return dbFileMeasurementEndSort(f);
+  if(field==='measTime'){const m=dbFileMeasurementTimeMin(f);return Number.isFinite(m)?m:Infinity;}
+  if(field==='date'){return new Date(f?.savedAt||0).getTime()||0;}
+  if(field==='temp'){const t=dbFileTempC(f);return Number.isFinite(t)?t:Infinity;}
+  return '';
+}
+function initDbTreeOrderUi(){
+  const labelMap={sample:'Sample',capillary:'Capillary',measStart:'Meas. start',measEnd:'Meas. end',measTime:'Meas. time',date:'Date',temp:'Temperature'};
+  const ids=['dbTreeLevel1','dbTreeLevel2','dbTreeLevel3','dbTreeLevel4','dbTreeLevel5','dbTreeLevel6','dbTreeLevel7'];
+  ids.forEach((id,idx)=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    el.innerHTML=DB_TREE_FIELDS.map(v=>`<option value="${v}">${labelMap[v]}</option>`).join('');
+    el.value=dbTreeOrder[idx]||DB_TREE_FIELDS[idx];
+  });
+}
+function applyDbTreeOrder(){
+  const ids=['dbTreeLevel1','dbTreeLevel2','dbTreeLevel3','dbTreeLevel4','dbTreeLevel5','dbTreeLevel6','dbTreeLevel7'];
+  const picked=ids.map(id=>document.getElementById(id)?.value).filter(Boolean);
+  const uniq=[];picked.forEach(v=>{if(!uniq.includes(v))uniq.push(v);});
+  DB_TREE_FIELDS.forEach(v=>{if(!uniq.includes(v))uniq.push(v);});
+  dbTreeOrder=uniq.slice(0,DB_TREE_FIELDS.length);
+  initDbTreeOrderUi();
+  renderDbFileList();
+}
+function toggleDbTreeNode(key){
+  dbTreeCollapsed[key]=!dbTreeCollapsed[key];
+  renderDbFileList();
+}
+function renderDbFileItem(f){
+  const fid=f.id;
+  const T=dbFileTempC(f);
+  const Tstr=Number.isFinite(T)?T+'°C':'—';
+  const lbl=dbFileSampleLabel(f);
+  const tags=dbFileTags(f);
+  const tagStr=tags.length?tags.join(', '):'—';
+  const c=dbFileCapillarySize(f);
+  const cStr=Number.isFinite(c)?`${c.toFixed(3)} mm`:'—';
+  const m=dbFileMeasurementTimeMin(f);
+  const mStr=Number.isFinite(m)?`${m.toFixed(2)} min`:'—';
+  const ms=dbFileMeasurementStartLabel(f);
+  const me=dbFileMeasurementEndLabel(f);
+  const date=f.savedAt?new Date(f.savedAt).toLocaleDateString():'';
+  return`<div class="db-item" onclick="loadFileFromDb(${fid})">
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+        <span>${esc(f.name||'(no name)')}</span>
+      </div>
+      <div class="db-meta" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span>${f.rowCount||0} pts</span>
+        <span>Cap: ${cStr}</span>
+        <span>Start: ${esc(ms)}</span>
+        <span>End: ${esc(me)}</span>
+        <span>Time: ${mStr}</span>
+        <span>T: ${Tstr}</span>
+        <span>Tags: ${esc(tagStr)}</span>
+        ${date?`<span>${date}</span>`:''}
+        ${lbl?`<span style="color:var(--accent)">${esc(lbl)}</span>`:''}
+        <span class="db-meta-edit" onclick="event.stopPropagation();openFileMetaEditModal(${fid})" title="Edit sample/tags/capillary/time/temperature">edit</span>
+      </div>
+    </div>
+    <div class="db-item-actions">
+      <button type="button" class="btn" onclick="event.stopPropagation();openFileFolderModal(${fid})">Folder</button>
+      <button type="button" class="btn warn" onclick="event.stopPropagation();deleteDbFile(${fid})">x</button>
+    </div>
+  </div>`;
+}
+function applyDbFileFilter(){
+  const t=(document.getElementById('dbFilterText')?.value||'').trim().toLowerCase();
+  const tags=normalizeTags(document.getElementById('dbFilterTags')?.value||'').map(x=>x.toLowerCase());
+  const tMin=parseFloat(document.getElementById('dbFilterTempMin')?.value);
+  const tMax=parseFloat(document.getElementById('dbFilterTempMax')?.value);
+  const sort=document.getElementById('dbFilterSort')?.value||'name-asc';
+  dbFileFilter={text:t,tags,tempMin:isFinite(tMin)?tMin:'',tempMax:isFinite(tMax)?tMax:'',sort};
+  renderDbFileList();
+}
+function clearDbFileFilter(){
+  const ids=['dbFilterText','dbFilterTags','dbFilterTempMin','dbFilterTempMax'];
+  ids.forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const sel=document.getElementById('dbFilterSort');if(sel)sel.value='name-asc';
+  dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',dateFrom:'',dateTo:'',sort:'name-asc'};
+  renderDbFileList();
+}
+function buildDbTreeNode(items,level,path){
+  if(level>=dbTreeOrder.length||items.length<=1){
+    return`<div class="db-tree-leaf">${items.map(renderDbFileItem).join('')}</div>`;
+  }
+  const field=dbTreeOrder[level];
+  const m=new Map();
+  items.forEach(f=>{
+    const k=dbTreeLabel(field,f);
+    if(!m.has(k))m.set(k,[]);
+    m.get(k).push(f);
+  });
+  const keys=[...m.keys()].sort((a,b)=>{
+    const av=dbTreeSortValue(field,m.get(a)[0]);
+    const bv=dbTreeSortValue(field,m.get(b)[0]);
+    if(typeof av==='number'&&typeof bv==='number')return av-bv;
+    return String(a).localeCompare(String(b),undefined,{numeric:true,sensitivity:'base'});
+  });
+  return keys.map((k,idx)=>{
+    const groupItems=m.get(k)||[];
+    const nodeKey=`${path}/${field}:${k}`;
+    const nodeArg=encodeURIComponent(nodeKey);
+    const collapsed=!!dbTreeCollapsed[nodeKey];
+    const tri=collapsed?'▸':'▾';
+    return`<div class="db-tree-node">
+      <div class="db-tree-head" onclick="toggleDbTreeNode(decodeURIComponent('${nodeArg}'))">
+        <span class="db-tree-tri">${tri}</span>
+        <span class="db-tree-key">${esc(k)}</span>
+        <span class="db-tree-meta">${groupItems.length}</span>
+      </div>
+      ${collapsed?'':buildDbTreeNode(groupItems,level+1,nodeKey)}
+    </div>`;
+  }).join('');
+}
+function renderDbFileList(){
+  const fl=document.getElementById('dbFileList');
+  if(!fl)return;
+  if(!dbFiles.length){fl.innerHTML='<div class="empty">No files in cache</div>';return;}
+  const {text,tags,tempMin,tempMax,sort}=dbFileFilter;
+  let filtered=dbFiles.filter(f=>{
+    if(text){
+      const name=(f.name||'').toLowerCase();
+      const lbl=dbFileSampleLabel(f).toLowerCase();
+      if(!name.includes(text)&&!lbl.includes(text))return false;
+    }
+    if(tags&&tags.length){
+      const ft=dbFileTags(f).map(x=>x.toLowerCase());
+      const hasAll=tags.every(tag=>ft.some(t=>t.includes(tag)));
+      if(!hasAll)return false;
+    }
+    if(tempMin!==''){const T=dbFileTempC(f);if(!Number.isFinite(T)||T<tempMin)return false;}
+    if(tempMax!==''){const T=dbFileTempC(f);if(!Number.isFinite(T)||T>tempMax)return false;}
+    return true;
+  });
+  filtered=filtered.slice().sort((a,b)=>{
+    if(sort==='name-asc'||sort==='name-desc'){
+      const ka=naturalKey(a.name||''),kb=naturalKey(b.name||'');
+      let r=0;
+      for(let i=0;i<Math.max(ka.length,kb.length);i++){const ai=ka[i]??'',bi=kb[i]??'';if(ai<bi){r=-1;break;}if(ai>bi){r=1;break;}}
+      return sort==='name-desc'?-r:r;
+    }
+    if(sort==='temp-asc'||sort==='temp-desc'){
+      const ta=dbFileTempC(a)??Infinity,tb=dbFileTempC(b)??Infinity;
+      return sort==='temp-desc'?tb-ta:ta-tb;
+    }
+    if(sort==='date-asc'||sort==='date-desc'){
+      const da=new Date(a.savedAt||0).getTime(),db2=new Date(b.savedAt||0).getTime();
+      return sort==='date-desc'?db2-da:da-db2;
+    }
+    return 0;
+  });
+  const emptyF='<div class="empty">No files in cache</div>';
+  const matchMsg=filtered.length!==dbFiles.length?`<div style="font-size:10px;color:var(--text3);padding:.25rem .65rem">${filtered.length}/${dbFiles.length} matched</div>`:'';
+  const treeHtml=filtered.length?`<div class="db-tree">${buildDbTreeNode(filtered,0,'root')}</div>`:emptyF;
+  fl.innerHTML=matchMsg+treeHtml;
+}
+function fmtDbSavedAt(s){
+  if(!s)return'';
+  const d=new Date(s);
+  return isNaN(d.getTime())?'':d.toLocaleString();
+}
+async function refreshDbPanels(){
+  const emptyF='<div class="empty">No files in cache</div>';
+  const emptyP='<div class="empty">No saved projects</div>';
+  const emptyT='<div class="empty">No saved series</div>';
+  try{
+    dbFiles=await adapter.listFiles().catch(()=>[]);
+    dbProjects=await adapter.listProjects().catch(()=>[]);
+    dbThermalSeries=await adapter.listThermalSeries().catch(()=>[]);
+    if(!Array.isArray(dbFiles))dbFiles=[];
+    if(!Array.isArray(dbProjects))dbProjects=[];
+    if(!Array.isArray(dbThermalSeries))dbThermalSeries=[];
+    dbFiles=dbFiles.filter(x=>x&&x.id!=null);
+    dbProjects=dbProjects.filter(x=>x&&x.id!=null);
+    dbThermalSeries=dbThermalSeries.filter(x=>x&&x.id!=null);
+  }catch(e){
+    console.error(e);
+    toast('DB read error: '+(e.message||e));
+    dbFiles=[];dbProjects=[];dbThermalSeries=[];
+  }
+  renderDbFileList();
+  const pl=document.getElementById('dbProjectList');
+  const renderProj=p=>{
+    const pid=p.id;
+    return`<div class="db-item" onclick="loadProjectFromDb(${pid})"><div style="flex:1;min-width:0"><div>${esc(p.name||'(no name)')}</div><div class="db-meta">${fmtDbSavedAt(p.savedAt)}</div></div><div class="db-item-actions"><button type="button" class="btn" onclick="event.stopPropagation();openProjectMetaModal(${pid})">Edit</button><button type="button" class="btn warn" onclick="event.stopPropagation();deleteDbProject(${pid})">x</button></div></div>`;
+  };
+  pl.innerHTML=dbProjects.length?renderDbListOrFlat(dbProjects,renderProj):emptyP;
+  const tsl=document.getElementById('dbThermalSeriesList');
+  const renderTs=t=>{
+    const tid=t.id;
+    return`<div class="db-item" onclick="loadThermalSeriesFromDb(${tid})"><div style="flex:1;min-width:0"><div>${esc(t.name||'Series')}</div><div class="db-meta">${t.memberUids?t.memberUids.length:0} samples</div></div><div class="db-item-actions"><button type="button" class="btn" onclick="event.stopPropagation();openSeriesMetaModal(${tid})">Edit</button><button type="button" class="btn warn" onclick="event.stopPropagation();deleteThermalSeriesFromDb(${tid},event)">x</button></div></div>`;
+  };
+  if(tsl)tsl.innerHTML=dbThermalSeries.length?renderDbListOrFlat(dbThermalSeries,renderTs):emptyT;
+}
+async function openProjectMetaModal(id){
+  try{
+    const rec=await adapter.getProject(id);
+    if(!rec)return;
+    document.getElementById('projectMetaId').value=String(id);
+    document.getElementById('projectMetaName').value=rec.name||'';
+    document.getElementById('projectMetaFolder').value=normalizeFolderPath(rec.folderPath);
+    document.getElementById('projectMetaModal').classList.add('show');
+  }catch(e){toast(e.message);}
+}
+function closeProjectMetaModal(){document.getElementById('projectMetaModal').classList.remove('show');}
+async function confirmProjectMeta(){
+  const id=parseInt(document.getElementById('projectMetaId').value,10);
+  const name=document.getElementById('projectMetaName').value.trim();
+  if(!name){toast('Enter project name');return;}
+  const folderPath=normalizeFolderPath(document.getElementById('projectMetaFolder').value);
+  closeProjectMetaModal();
+  try{
+    const rec=await adapter.getProject(id);
+    if(!rec)return;
+    await adapter.saveProject({...rec,id,name,folderPath,tags:rec.tags||[],payload:rec.payload});
+    await refreshDbPanels();
+    toast('Project updated');
+  }catch(e){toast(e.message);}
+}
+async function openSeriesMetaModal(id){
+  try{
+    const rec=await adapter.getThermalSeries(id);
+    if(!rec)return;
+    document.getElementById('seriesMetaId').value=String(id);
+    document.getElementById('seriesMetaName').value=rec.name||'';
+    document.getElementById('seriesMetaFolder').value=normalizeFolderPath(rec.folderPath);
+    document.getElementById('seriesMetaModal').classList.add('show');
+  }catch(e){toast(e.message);}
+}
+function closeSeriesMetaModal(){document.getElementById('seriesMetaModal').classList.remove('show');}
+async function confirmSeriesMeta(){
+  const id=parseInt(document.getElementById('seriesMetaId').value,10);
+  const name=document.getElementById('seriesMetaName').value.trim();
+  if(!name){toast('Enter series name');return;}
+  const folderPath=normalizeFolderPath(document.getElementById('seriesMetaFolder').value);
+  closeSeriesMetaModal();
+  try{
+    const rec=await adapter.getThermalSeries(id);
+    if(!rec)return;
+    await adapter.saveThermalSeries({...rec,id,name,folderPath,memberUids:rec.memberUids||[]});
+    await refreshDbPanels();
+    toast('Series updated');
+  }catch(e){toast(e.message);}
+}
+async function openFileFolderModal(id){
+  try{
+    const rec=await adapter.getFile(id);
+    if(!rec)return;
+    document.getElementById('fileFolderMetaId').value=String(id);
+    document.getElementById('fileFolderMetaLabel').textContent=rec.name||('id '+id);
+    document.getElementById('fileFolderMetaPath').value=normalizeFolderPath(rec.folderPath);
+    document.getElementById('fileFolderModal').classList.add('show');
+  }catch(e){toast(e.message);}
+}
+function closeFileFolderModal(){document.getElementById('fileFolderModal').classList.remove('show');}
+async function confirmFileFolderMeta(){
+  const id=parseInt(document.getElementById('fileFolderMetaId').value,10);
+  const folderPath=normalizeFolderPath(document.getElementById('fileFolderMetaPath').value);
+  closeFileFolderModal();
+  try{
+    const rec=await adapter.getFile(id);
+    if(!rec)return;
+    await adapter.saveFile({...rec,id,folderPath,name:rec.name,rawText:rec.rawText,rowCount:rec.rowCount});
+    await refreshDbPanels();
+    toast('File folder updated');
+  }catch(e){toast(e.message);}
+}
+async function loadFileFromDb(id){
+  try{
+    const rec=await adapter.getFile(id);
+    if(!rec)return;
+    const isHDF5b64=typeof rec.rawText==='string'&&rec.rawText.startsWith('__HDF5_BASE64__');
+    const isProjectSample=typeof rec.rawText==='string'&&rec.rawText.startsWith('__PROJECT_SAMPLE_JSON__');
+    let p;
+    if(isProjectSample){
+      const b64=rec.rawText.slice('__PROJECT_SAMPLE_JSON__'.length);
+      const json=atob(b64);
+      p=JSON.parse(json);
+      if(p&&typeof p==='object'){
+        p.rawName=p.rawName||rec.name||p.name||'';
+        p.name=p.name||p.rawName||rec.name||'sample';
+      }
+    }else if(isHDF5b64){
+      const b64=rec.rawText.slice('__HDF5_BASE64__'.length);
+      const bin=atob(b64);
+      const buf=new ArrayBuffer(bin.length);
+      const view=new Uint8Array(buf);
+      for(let i=0;i<bin.length;i++)view[i]=bin.charCodeAt(i);
+      const fakeFile={name:rec.name};
+      p=await parseHDF5(buf,rec.name);
+    }else{
+      const fakeFile={name:rec.name};
+      p=await Promise.resolve(parseAny(fakeFile,rec.rawText));
+    }
+    if(!p)return;
+    ensureSampleUid(p);
+    p.color=COLORS[samples.length%COLORS.length];
+    ensureSampleThermal(p);
+    samples.push(p);
+    samples.sort(naturalCompareSamples);
+    samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
+    renderAll();
+    toast(`Loaded ${rec.name}`);
+  }catch(e){toast(e.message||String(e));}
+}
+async function deleteDbFile(id){if(!confirm('Delete file from cache?'))return;await adapter.deleteFile(id);refreshDbPanels();}
+async function clearDbFiles(){if(!confirm('Clear all cached files?'))return;await adapter.clearFiles();refreshDbPanels();}
+function buildProjectCacheRecordFromSample(s){
+  if(!s)return null;
+  const cacheName=(s.rawName&&String(s.rawName).trim())||((s.name&&String(s.name).trim())?String(s.name).trim():'sample_from_project');
+  const cacheSample={
+    rawName:s.rawName||cacheName,
+    name:s.name||cacheName,
+    tth:Array.isArray(s.tth)?s.tth:[],
+    intensity:Array.isArray(s.intensity)?s.intensity:[],
+    tempSetPoint:Number.isFinite(s.tempSetPoint)?s.tempSetPoint:null,
+    tempStart:Number.isFinite(s.tempStart)?s.tempStart:null,
+    tempEnd:Number.isFinite(s.tempEnd)?s.tempEnd:null,
+    timeStart:s.timeStart instanceof Date?s.timeStart.toISOString():(s.timeStart||null),
+    timeEnd:s.timeEnd instanceof Date?s.timeEnd.toISOString():(s.timeEnd||null),
+    meta:s.meta&&typeof s.meta==='object'?s.meta:{}
+  };
+  const sampleLabel=(s.name&&String(s.name).trim()&&s.name!==cacheName)?String(s.name).trim():'';
+  const tags=normalizeTags(s?.meta?.tags);
+  const tempC=Number.isFinite(s.tempSetPoint)?s.tempSetPoint:(Number.isFinite(s.tempStart)?s.tempStart:parseTempFromFilename(cacheName));
+  const capillarySize=s?.meta&&Number.isFinite(+s.meta.capillarySize)?(+s.meta.capillarySize):null;
+  const measurementTimeMin=s?.meta&&Number.isFinite(+s.meta.measurementTimeMin)?(+s.meta.measurementTimeMin):null;
+  return{
+    name:cacheName,
+    rawText:'__PROJECT_SAMPLE_JSON__'+btoa(JSON.stringify(cacheSample)),
+    rowCount:Array.isArray(cacheSample.tth)?cacheSample.tth.length:0,
+    folderPath:'',
+    sampleLabel,
+    tags,
+    tempC:Number.isFinite(tempC)?tempC:null,
+    capillarySize:Number.isFinite(capillarySize)?capillarySize:null,
+    measurementTimeMin:Number.isFinite(measurementTimeMin)?measurementTimeMin:null,
+    measurementStartIso:s.timeStart instanceof Date?s.timeStart.toISOString():(s.timeStart||null),
+    measurementEndIso:s.timeEnd instanceof Date?s.timeEnd.toISOString():(s.timeEnd||null)
+  };
+}
+async function ensureProjectSamplesCached(samplesFromProject){
+  const arr=Array.isArray(samplesFromProject)?samplesFromProject:[];
+  if(!arr.length)return{added:0,total:0};
+  const existing=await adapter.listFiles().catch(()=>[]);
+  const existingNames=new Set((existing||[]).map(f=>String(f?.name||'').trim()).filter(Boolean));
+  let added=0;
+  for(const s of arr){
+    const rec=buildProjectCacheRecordFromSample(s);
+    if(!rec||!rec.name||existingNames.has(rec.name))continue;
+    await adapter.saveFile(rec);
+    existingNames.add(rec.name);
+    added++;
+  }
+  if(added>0)await refreshDbPanels();
+  return{added,total:arr.length};
+}
+async function loadProjectFromDb(id){
+  try{
+    const rec=await adapter.getProject(id);
+    if(!rec)return;
+    hydrateProject(rec.payload,{replace:true});
+    const r=await ensureProjectSamplesCached(rec.payload?.samples);
+    const msg=r.added>0?`Loaded project ${rec.name} (+${r.added} file(s) cached)`:`Loaded project ${rec.name}`;
+    toast(msg);
+  }catch(e){toast(e.message);}
+}
+async function deleteDbProject(id){if(!confirm('Delete project?'))return;await adapter.deleteProject(id);refreshDbPanels();}
+async function clearDbProjects(){if(!confirm('Clear all projects?'))return;await adapter.clearProjects();refreshDbPanels();}
+function openSaveModal(){
+  document.getElementById('projectName').value=`Project_${stamp()}`;
+  document.getElementById('projectFolderInput').value='';
+  document.getElementById('projectTags').value='';
+  document.getElementById('saveModal').classList.add('show');
+}
+function closeSaveModal(){document.getElementById('saveModal').classList.remove('show');}
+document.getElementById('saveModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSaveModal();});
+document.getElementById('seriesEditorModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSeriesEditorModal();});
+document.getElementById('seriesDbModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSeriesDbModal();});
+document.getElementById('projectMetaModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeProjectMetaModal();});
+document.getElementById('seriesMetaModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeSeriesMetaModal();});
+document.getElementById('fileFolderModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeFileFolderModal();});
+document.getElementById('fileMetaEditModal').addEventListener('click',e=>{if(e.target===e.currentTarget)closeFileMetaEditModal();});
+async function openFileMetaEditModal(id){
+  try{
+    const rec=await adapter.getFile(id);
+    if(!rec)return;
+    document.getElementById('fileMetaEditId').value=String(id);
+    document.getElementById('fileMetaEditLabel').textContent=rec.name||('id '+id);
+    document.getElementById('fileMetaEditSampleLabel').value=rec.sampleLabel||'';
+    document.getElementById('fileMetaEditTags').value=dbFileTags(rec).join(', ');
+    document.getElementById('fileMetaEditCapillarySize').value=Number.isFinite(+rec.capillarySize)?(+rec.capillarySize):'';
+    document.getElementById('fileMetaEditMeasurementTime').value=Number.isFinite(+rec.measurementTimeMin)?(+rec.measurementTimeMin):'';
+    document.getElementById('fileMetaEditMeasStart').value=dbIsoToLocalInput(dbFileMeasurementStartIso(rec));
+    document.getElementById('fileMetaEditMeasEnd').value=dbIsoToLocalInput(dbFileMeasurementEndIso(rec));
+    const T=dbFileTempC(rec);
+    document.getElementById('fileMetaEditTempC').value=Number.isFinite(T)?T:'';
+    document.getElementById('fileMetaEditModal').classList.add('show');
+  }catch(e){toast(e.message);}
+}
+function closeFileMetaEditModal(){document.getElementById('fileMetaEditModal').classList.remove('show');}
+async function confirmFileMetaEdit(){
+  const id=parseInt(document.getElementById('fileMetaEditId').value,10);
+  const sampleLabel=document.getElementById('fileMetaEditSampleLabel').value.trim();
+  const tags=normalizeTags(document.getElementById('fileMetaEditTags').value);
+  const cVal=document.getElementById('fileMetaEditCapillarySize').value;
+  const capillarySize=cVal===''?null:parseFloat(cVal);
+  const mVal=document.getElementById('fileMetaEditMeasurementTime').value;
+  const measurementTimeMin=mVal===''?null:parseFloat(mVal);
+  const measurementStartIso=dbLocalInputToIso(document.getElementById('fileMetaEditMeasStart').value);
+  const measurementEndIso=dbLocalInputToIso(document.getElementById('fileMetaEditMeasEnd').value);
+  const tVal=document.getElementById('fileMetaEditTempC').value;
+  const tempC=tVal===''?null:parseFloat(tVal);
+  closeFileMetaEditModal();
+  try{
+    const rec=await adapter.getFile(id);
+    if(!rec)return;
+    await adapter.saveFile({...rec,id,sampleLabel,tags,capillarySize:Number.isFinite(capillarySize)?capillarySize:null,measurementTimeMin:Number.isFinite(measurementTimeMin)?measurementTimeMin:null,measurementStartIso,measurementEndIso,tempC:Number.isFinite(tempC)?tempC:null});
+    dbFiles=await adapter.listFiles().catch(()=>[]);
+    renderDbFileList();
+    toast('Metadata updated');
+  }catch(e){toast(e.message);}
+}
+async function confirmSaveProject(){
+  const name=document.getElementById('projectName').value.trim()||`Project_${stamp()}`;
+  const folderPath=normalizeFolderPath(document.getElementById('projectFolderInput').value);
+  const tags=document.getElementById('projectTags').value.split(',').map(x=>x.trim()).filter(Boolean);
+  closeSaveModal();
+  try{
+    await adapter.saveProject({name,folderPath,tags,payload:serializeProject()});
+    await refreshDbPanels();
+    toast(`Saved ${name}`);
+  }catch(e){
+    console.error(e);
+    toast('Project save failed: '+(e.message||e));
+  }
+}
+async function exportFullDb(){
+  let thermalSeriesPresets=[];
+  try{thermalSeriesPresets=await adapter.listThermalSeries();}catch(_e){thermalSeriesPresets=[];}
+  const payload={version:2,exportedAt:new Date().toISOString(),files:await adapter.listFiles(),projects:await adapter.listProjects(),thermalSeriesPresets};
+  downloadText(`xrd_th_db_full_${stamp()}.json`,JSON.stringify(payload,null,2));toast('DB exported');
+}
+async function importFullDb(file){
+  const r=new FileReader();
+  r.onload=async e=>{
+    try{
+      const payload=JSON.parse(e.target.result);
+      if(!Array.isArray(payload.files)||!Array.isArray(payload.projects))throw new Error('Invalid DB dump');
+      const replace=confirm('OK=replace / Cancel=merge?');
+      if(replace){await adapter.clearFiles();await adapter.clearProjects();try{await adapter.clearThermalSeries();}catch(_e){}}
+      const existingFiles=replace?[]:await adapter.listFiles();
+      const existingProjects=replace?[]:await adapter.listProjects();
+      const existingTs=replace?[]:(await adapter.listThermalSeries().catch(()=>[]));
+      for(const f of payload.files){if(!replace&&existingFiles.find(x=>x.name===f.name))continue;const {id:_,...rest}=f;await adapter.saveFile({...rest,folderPath:normalizeFolderPath(rest.folderPath)});}
+      for(const p of payload.projects){if(!replace&&existingProjects.find(x=>x.name===p.name&&x.savedAt===p.savedAt))continue;const {id:_,...rest}=p;await adapter.saveProject({...rest,folderPath:normalizeFolderPath(rest.folderPath)});}
+      const presets=payload.thermalSeriesPresets||payload.thermalSeriesDb;
+      if(Array.isArray(presets)){
+        for(const t of presets){
+          if(!replace&&existingTs.find(x=>x.name===t.name&&String(x.savedAt)===String(t.savedAt)))continue;
+          const {id:_i,...rest}=t;
+          if(rest.name&&Array.isArray(rest.memberUids))await adapter.saveThermalSeries({name:rest.name,folderPath:normalizeFolderPath(rest.folderPath),memberUids:rest.memberUids});
+        }
+      }
+      await refreshDbPanels();toast('DB imported');
+    }catch(err){alert(err.message);}
+  };
+  r.readAsText(file,'UTF-8');
+}
+
+function initFileDrop(){
+  const dz=document.getElementById('dropZone');
+  let dragDepth=0;
+  const highlight=on=>{if(dz)dz.classList.toggle('drag',!!on);};
+  const onDragOver=e=>{e.preventDefault();e.stopPropagation();if(e.dataTransfer)e.dataTransfer.dropEffect='copy';};
+  const onDragEnter=e=>{
+    e.preventDefault();e.stopPropagation();
+    dragDepth++;
+    highlight(true);
+  };
+  const onDragLeave=e=>{
+    e.preventDefault();e.stopPropagation();
+    dragDepth=Math.max(0,dragDepth-1);
+    if(dragDepth===0)highlight(false);
+  };
+  const onDrop=e=>{
+    e.preventDefault();e.stopPropagation();
+    dragDepth=0;
+    highlight(false);
+    const files=e.dataTransfer?.files;
+    if(files&&files.length)handleFiles(files);
+  };
+  [dz,document.body].filter(Boolean).forEach(el=>{
+    el.addEventListener('dragover',onDragOver);
+    el.addEventListener('dragenter',onDragEnter);
+    el.addEventListener('dragleave',onDragLeave);
+    el.addEventListener('drop',onDrop);
+  });
+  window.addEventListener('dragover',e=>{e.preventDefault();});
+  window.addEventListener('drop',e=>{
+    e.preventDefault();
+    dragDepth=0;
+    highlight(false);
+    const files=e.dataTransfer?.files;
+    if(files&&files.length)handleFiles(files);
+  });
+  if(dz)dz.addEventListener('click',()=>document.getElementById('fileIn')?.click());
+}
+initFileDrop();
+document.getElementById('fileIn').addEventListener('change',e=>{handleFiles(e.target.files);e.target.value='';});
+document.getElementById('projectIn').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importProjectJson(f);e.target.value='';});
+document.getElementById('dataIn').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importDataJson(f);e.target.value='';});
+document.getElementById('dbIn').addEventListener('change',e=>{const f=e.target.files?.[0];if(f)importFullDb(f);e.target.value='';});
+
+(async()=>{
+  runEnvironmentChecks();
+  initDbTreeOrderUi();
+  updateXaxisModeUi();
+  const savedTheme=localStorage.getItem('xrd_th_theme');
+  setTheme(savedTheme==='dark'?'dark':'light');
+  if(typeof indexedDB==='undefined')toast('IndexedDB not available — DB cache disabled (private mode, etc.).');
+  try{syncXrdChartHeight();syncOuterChartHeight();const src=document.getElementById('xrdSourceMode');if(src)src.value=xrdSourceMode;updateXrdModeButtons();}catch(e){console.error(e);}
+  try{await refreshDbPanels();}catch(e){console.error(e);toast('DB init: '+(e.message||e));}
+  try{renderAll();}catch(e){console.error(e);toast('UI: '+(e.message||e));}
+})();
+</script>
+</body>
+</html>
