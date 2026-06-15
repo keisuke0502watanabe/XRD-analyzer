@@ -1,0 +1,8 @@
+# OS / editor junk
+.DS_Store
+
+# Local scratch archives
+gh.tar.gz
+
+# Local tooling / machine-specific config
+.claude/
