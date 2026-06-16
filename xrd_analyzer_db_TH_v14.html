@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>XRD Analyzer DB TH v13</title>
+<title>XRD Analyzer DB TH v14</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
@@ -32,12 +32,16 @@ body.theme-dark{
   --text3:#888;
 }
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);font-size:13px}
-.app{display:flex;min-height:100vh}
+.app{display:flex;height:100vh;overflow:hidden}
 .app.db-layout-sidebar{flex-direction:row}
 .app.db-layout-top{flex-direction:column}
-.db-dock{background:var(--bg2);display:flex;flex-direction:column;min-height:0;flex-shrink:0}
-.app.db-layout-sidebar .db-dock{width:290px;border-right:1px solid var(--border)}
-.app.db-layout-top .db-dock{width:100%;max-height:min(45vh,420px);border-bottom:1px solid var(--border)}
+.db-dock{background:var(--bg2);display:flex;flex-direction:column;min-height:0;flex-shrink:0;position:relative}
+.app.db-layout-sidebar .db-dock{width:var(--db-dock-w,290px);border-right:1px solid var(--border)}
+.app.db-layout-top .db-dock{width:100%;height:var(--db-dock-h,min(45vh,420px));max-height:85vh;border-bottom:1px solid var(--border)}
+.db-dock-resizer{position:absolute;z-index:6;background:transparent;touch-action:none}
+.db-dock-resizer:hover,.db-dock-resizer.dragging{background:color-mix(in srgb,var(--accent) 35%, transparent)}
+.app.db-layout-sidebar .db-dock-resizer{top:0;right:-3px;width:6px;height:100%;cursor:col-resize}
+.app.db-layout-top .db-dock-resizer{left:0;bottom:-3px;width:100%;height:6px;cursor:row-resize}
 .db-dock-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:.45rem .65rem;border-bottom:1px solid var(--border);flex-shrink:0}
 .db-dock-toolbar .title{margin:0}
 .db-dock-layout{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)}
@@ -188,6 +192,14 @@ body.theme-dark .app-notice{background:#352a12;border-color:#8a7020;color:#f2e6c
 .pattern-node-meta{color:var(--text3);font-size:10px;flex-shrink:0}
 .basket-controls{display:flex;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap}
 .basket-chk-on{background:color-mix(in srgb,var(--accent) 9%, transparent)}
+.db-cache-chk{flex-shrink:0;margin:0 2px 0 0;cursor:pointer}
+.fb-list{max-height:min(200px,26vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:3px;font-size:11px}
+.fb-row{display:flex;align-items:center;gap:5px;padding:3px 4px;border-radius:4px}
+.fb-row:hover{background:var(--bg3)}
+.fb-row.fb-excluded{opacity:.5}
+.fb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fb-meta{color:var(--text3);font-size:10px;flex-shrink:0}
+.fb-parent-plot{position:relative;width:100%;min-width:0;height:240px;border:1px solid var(--border);border-radius:6px;margin-top:6px;padding:4px}
 .seg-item{padding:.35rem 0;font-size:11px}
 .seg-item:last-child{border-bottom:none}
 details.seg-acc{border:1px solid var(--border);border-radius:6px;background:var(--bg3);margin-bottom:6px}
@@ -262,6 +274,19 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
         </div>
         <div id="dbFileList" class="db-list db-list--files"><div class="empty">No files in cache</div></div>
       </div>
+      <div class="db-dock-col db-col-basket">
+        <div class="section">
+          <div class="title">第一バスケット → 親plot</div>
+          <div style="font-size:9px;color:var(--text3);margin:-2px 0 4px">Check files in the cache above to stage them here (not loaded until you plot). ⠿ drag to reorder, uncheck to exclude, then Plot.</div>
+          <div class="ctrl-row">
+            <button class="btn green" onclick="plotFirstBasket()">▶ Plot parent</button>
+            <button class="btn" onclick="clearFirstBasket()">Clear</button>
+            <span id="firstBasketCount" style="font-size:10px;color:var(--text3)"></span>
+          </div>
+        </div>
+        <div id="firstBasketList" class="fb-list"><div class="empty">Basket is empty — check files above</div></div>
+        <div class="fb-parent-plot"><canvas id="basketParentCanvas"></canvas></div>
+      </div>
       <div class="db-dock-col db-col-projects">
         <div class="section">
           <div class="title">Projects</div>
@@ -284,12 +309,13 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
         <div id="dbThermalSeriesList" class="db-list db-list--scroll" style="max-height:min(220px,40vh);min-height:72px"><div class="empty">No saved series</div></div>
       </div>
     </div>
+    <div class="db-dock-resizer" id="dbDockResizer" title="Drag to resize the DB panel"></div>
   </aside>
 
   <div class="main">
     <div id="appNotice" class="app-notice" role="status" aria-live="polite"></div>
     <div class="topbar">
-      <span class="brand">XRD Analyzer DB TH v13</span>
+      <span class="brand">XRD Analyzer DB TH v14</span>
       <label class="db-dock-layout" style="margin-right:4px">DB panel<select class="dbPanelLayoutSelect" onchange="setDbPanelLayout(this.value)"><option value="sidebar">Sidebar</option><option value="top">Top</option></select></label>
       <div class="sep"></div>
       <button class="btn" onclick="document.getElementById('fileIn').click()">Load Files</button>
@@ -672,7 +698,7 @@ const openSegmentAcc=new Set();
 const openSampleThermalAcc=new Set();
 let samples=[];let xrdChart=null;let thermalChart=null;let outerChart=null;
 let _resizeTimer=0;
-function resizeAllCharts(){[xrdChart,thermalChart,outerChart].forEach(ch=>{try{ch&&ch.resize();}catch(e){}});}
+function resizeAllCharts(){[xrdChart,thermalChart,outerChart,basketParentChart].forEach(ch=>{try{ch&&ch.resize();}catch(e){}});}
 window.addEventListener('resize',()=>{clearTimeout(_resizeTimer);_resizeTimer=setTimeout(resizeAllCharts,120);});
 let xrdMode='overlay',layout='tb',timeUnit='sec';
 let combineMode='overlay';
@@ -702,8 +728,8 @@ let legendBesideXOffsetPx=0;
 const avgSelectUids=new Set();
 let dbFiles=[],dbProjects=[],dbThermalSeries=[],toastTimer=null;
 let dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',dateFrom:'',dateTo:'',sort:'name-asc'};
-const DB_TREE_FIELDS=['sample','capillary','measTime','measStart','measEnd','date','temp'];
-let dbTreeOrder=['sample','capillary','measStart','measEnd','measTime','date','temp'];
+const DB_TREE_FIELDS=['sample','measStart','temp','filename','tags','capillary','measEnd','measTime','date'];
+let dbTreeOrder=['sample','measStart','temp','filename','tags','capillary','measEnd'];
 let dbTreeCollapsed={};
 let uiTheme='light';
 let basketSearch='';
@@ -715,6 +741,12 @@ let thermalSeriesList=[];
 let activeThermalSeriesId=null;
 let combineList=[]; // {id, name, seriesId}
 let activeCombineId=null;
+// First basket: stage DB-cache files (by id) for the parent plot, lazy-loaded on Plot.
+let firstBasket=[];            // ordered array of DB file ids
+let firstBasketExcluded=new Set(); // ids present in basket but unchecked (excluded from plot)
+let basketRootId=null;         // id of the root pattern (combine) built from the basket
+let basketParentChart=null;    // compact parent-plot chart in the DB dock
+let basketPlotted=false;
 let seriesEditorTargetId=null;
 let seriesDraftOrder=[];
 
@@ -839,10 +871,51 @@ function setDbPanelLayout(v){
   }
   document.querySelectorAll('.dbPanelLayoutSelect').forEach(el=>{el.value=dbPanelLayout;});
   try{localStorage.setItem('xrd_th_db_panel_layout',dbPanelLayout);}catch(_e){}
+  setTimeout(()=>{try{resizeAllCharts();}catch(_e){}},0);
 }
 function initDbPanelLayout(){
   const saved=localStorage.getItem('xrd_th_db_panel_layout');
   setDbPanelLayout(saved==='top'?'top':'sidebar');
+}
+function initDockResizer(){
+  const dock=document.getElementById('dbDock');
+  const root=document.getElementById('appRoot');
+  const rez=document.getElementById('dbDockResizer');
+  if(!dock||!root||!rez)return;
+  const sw=parseFloat(localStorage.getItem('xrd_th_db_dock_w'));if(Number.isFinite(sw))root.style.setProperty('--db-dock-w',sw+'px');
+  const sh=parseFloat(localStorage.getItem('xrd_th_db_dock_h'));if(Number.isFinite(sh))root.style.setProperty('--db-dock-h',sh+'px');
+  let drag=null;
+  rez.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    drag={top:dbPanelLayout==='top',startX:e.clientX,startY:e.clientY,startW:dock.offsetWidth,startH:dock.offsetHeight};
+    rez.classList.add('dragging');
+    try{rez.setPointerCapture(e.pointerId);}catch(_){}
+    document.body.style.userSelect='none';
+  });
+  rez.addEventListener('pointermove',e=>{
+    if(!drag)return;
+    if(drag.top){
+      let h=drag.startH+(e.clientY-drag.startY);
+      h=Math.max(120,Math.min(window.innerHeight*0.85,h));
+      root.style.setProperty('--db-dock-h',h+'px');
+    }else{
+      let w=drag.startW+(e.clientX-drag.startX);
+      w=Math.max(180,Math.min(window.innerWidth*0.7,w));
+      root.style.setProperty('--db-dock-w',w+'px');
+    }
+  });
+  const end=e=>{
+    if(!drag)return;
+    document.body.style.userSelect='';
+    rez.classList.remove('dragging');
+    try{rez.releasePointerCapture(e.pointerId);}catch(_){}
+    if(drag.top)localStorage.setItem('xrd_th_db_dock_h',String(dock.offsetHeight));
+    else localStorage.setItem('xrd_th_db_dock_w',String(dock.offsetWidth));
+    drag=null;
+    resizeAllCharts();
+  };
+  rez.addEventListener('pointerup',end);
+  rez.addEventListener('pointercancel',end);
 }
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function normalizeFolderPath(p){
@@ -1164,6 +1237,7 @@ function initListDnd(){
   bindListDnd('sampleList','.sample-item',row=>row.dataset.sampleUid,reorderSampleDisplay);
   bindListDnd('outerSegList','.outer-seg-row',row=>row.dataset.traceIdx,reorderCombineTrace);
   bindListDnd('seriesEditorMemberList','.series-order-row',row=>row.dataset.orderIdx,reorderSeriesDraft);
+  bindListDnd('firstBasketList','.fb-row',row=>row.dataset.fbId,reorderFirstBasket);
 }
 // Preserve per-row horizontal scroll (and the list's vertical scroll) across an
 // innerHTML rebuild, so editing a field deep in a row doesn't snap the row back.
@@ -3529,6 +3603,8 @@ function dbTreeLabel(field,f){
     const t=dbFileTempC(f);
     return Number.isFinite(t)?`${t.toFixed(1)}°C`:'Unknown temp';
   }
+  if(field==='filename')return f?.name||'(no name)';
+  if(field==='tags'){const t=dbFileTags(f);return (t&&t.length)?t.join(', '):'Untagged';}
   return'Unknown';
 }
 function dbTreeSortValue(field,f){
@@ -3539,10 +3615,12 @@ function dbTreeSortValue(field,f){
   if(field==='measTime'){const m=dbFileMeasurementTimeMin(f);return Number.isFinite(m)?m:Infinity;}
   if(field==='date'){return new Date(f?.savedAt||0).getTime()||0;}
   if(field==='temp'){const t=dbFileTempC(f);return Number.isFinite(t)?t:Infinity;}
+  if(field==='filename')return (f?.name||'').toLowerCase();
+  if(field==='tags'){const t=dbFileTags(f);return (t&&t.length)?t.join(',').toLowerCase():'~~~';}
   return '';
 }
 function initDbTreeOrderUi(){
-  const labelMap={sample:'Sample',capillary:'Capillary',measStart:'Meas. start',measEnd:'Meas. end',measTime:'Meas. time',date:'Date',temp:'Temperature'};
+  const labelMap={sample:'Sample',measStart:'Meas. start',temp:'Temperature',filename:'Filename',tags:'Tags',capillary:'Capillary',measEnd:'Meas. end',measTime:'Meas. time',date:'Date'};
   const ids=['dbTreeLevel1','dbTreeLevel2','dbTreeLevel3','dbTreeLevel4','dbTreeLevel5','dbTreeLevel6','dbTreeLevel7'];
   ids.forEach((id,idx)=>{
     const el=document.getElementById(id);
@@ -3579,6 +3657,7 @@ function renderDbFileItem(f){
   const me=dbFileMeasurementEndLabel(f);
   const date=f.savedAt?new Date(f.savedAt).toLocaleDateString():'';
   return`<div class="db-item" onclick="loadFileFromDb(${fid})">
+    <input type="checkbox" class="db-cache-chk" ${isInFirstBasket(fid)?'checked':''} onclick="event.stopPropagation();toggleCacheToBasket(${fid},this.checked)" title="Add to first basket (parent plot)">
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
         <span>${esc(f.name||'(no name)')}</span>
@@ -3717,7 +3796,11 @@ async function refreshDbPanels(){
     toast('DB read error: '+(e.message||e));
     dbFiles=[];dbProjects=[];dbThermalSeries=[];
   }
+  // prune basket entries whose files were deleted from the DB
+  firstBasket=firstBasket.filter(id=>dbFiles.some(f=>f&&f.id===id));
+  firstBasketExcluded.forEach(id=>{if(!firstBasket.includes(id))firstBasketExcluded.delete(id);});
   renderDbFileList();
+  renderFirstBasket();
   const pl=document.getElementById('dbProjectList');
   const renderProj=p=>{
     const pid=p.id;
@@ -3843,6 +3926,128 @@ async function loadFileFromDb(id){
   }catch(e){toast(e.message||String(e));}
 }
 async function deleteDbFile(id){if(!confirm('Delete file from cache?'))return;await adapter.deleteFile(id);refreshDbPanels();}
+// ---- First basket: DB cache -> staged list -> parent plot ----
+function isInFirstBasket(id){return firstBasket.includes(Number(id));}
+function basketIncludedIds(){return firstBasket.filter(id=>!firstBasketExcluded.has(id));}
+function dbRecForId(id){return (dbFiles||[]).find(f=>f&&f.id===Number(id))||null;}
+function toggleCacheToBasket(id,on){
+  id=Number(id);
+  if(on){if(!firstBasket.includes(id))firstBasket.push(id);firstBasketExcluded.delete(id);}
+  else{firstBasket=firstBasket.filter(x=>x!==id);firstBasketExcluded.delete(id);}
+  renderFirstBasket();
+  if(basketPlotted)syncBasketPlot();
+}
+function toggleBasketInclude(id,on){
+  id=Number(id);
+  if(on)firstBasketExcluded.delete(id);else firstBasketExcluded.add(id);
+  renderFirstBasket();
+  if(basketPlotted)syncBasketPlot();
+}
+function removeFromBasket(id){
+  id=Number(id);
+  firstBasket=firstBasket.filter(x=>x!==id);firstBasketExcluded.delete(id);
+  renderFirstBasket();renderDbFileList();
+  if(basketPlotted)syncBasketPlot();
+}
+function clearFirstBasket(){
+  firstBasket=[];firstBasketExcluded.clear();
+  renderFirstBasket();renderDbFileList();
+  if(basketPlotted)syncBasketPlot();
+}
+function reorderFirstBasket(fromId,toId){
+  fromId=Number(fromId);toId=Number(toId);
+  const from=firstBasket.indexOf(fromId),to=firstBasket.indexOf(toId);
+  if(from<0||to<0||from===to)return;
+  const it=firstBasket.splice(from,1)[0];
+  firstBasket.splice(to,0,it);
+  renderFirstBasket();
+  if(basketPlotted)syncBasketPlot();
+}
+function renderFirstBasket(){
+  const el=document.getElementById('firstBasketList');
+  const cnt=document.getElementById('firstBasketCount');
+  if(!el)return;
+  if(!firstBasket.length){el.innerHTML='<div class="empty">Basket is empty — check files above</div>';if(cnt)cnt.textContent='';return;}
+  if(cnt)cnt.textContent=`${basketIncludedIds().length}/${firstBasket.length}`;
+  el.innerHTML=firstBasket.map(id=>{
+    const excluded=firstBasketExcluded.has(id);
+    const r=dbRecForId(id);
+    const name=r?(r.name||'(no name)'):('(missing #'+id+')');
+    const T=r?dbFileTempC(r):null;
+    const temp=Number.isFinite(T)?T.toFixed(0)+'°C':'';
+    return`<div class="fb-row${excluded?' fb-excluded':''}" data-fb-id="${id}">
+      <span class="dnd-handle" draggable="true" title="Drag to reorder">⠿</span>
+      <input type="checkbox" ${excluded?'':'checked'} onchange="toggleBasketInclude(${id},this.checked)" title="Include in parent plot">
+      <span class="fb-name" title="${esc(name)}">${esc(name)}</span>
+      <span class="fb-meta">${esc(temp)}</span>
+      <button type="button" class="btn warn" style="padding:0 5px;font-size:10px" onclick="removeFromBasket(${id})" title="Remove from basket">x</button>
+    </div>`;
+  }).join('');
+}
+async function ensureDbFileLoaded(id){
+  id=Number(id);
+  const existing=samples.find(s=>s.dbId===id);
+  if(existing)return existing;
+  try{
+    const rec=await adapter.getFile(id);
+    if(!rec)return null;
+    const isHDF5b64=typeof rec.rawText==='string'&&rec.rawText.startsWith('__HDF5_BASE64__');
+    const isProjectSample=typeof rec.rawText==='string'&&rec.rawText.startsWith('__PROJECT_SAMPLE_JSON__');
+    let p;
+    if(isProjectSample){const b64=rec.rawText.slice('__PROJECT_SAMPLE_JSON__'.length);p=JSON.parse(atob(b64));if(p&&typeof p==='object'){p.rawName=p.rawName||rec.name||p.name||'';p.name=p.name||p.rawName||rec.name||'sample';}}
+    else if(isHDF5b64){const b64=rec.rawText.slice('__HDF5_BASE64__'.length);const bin=atob(b64);const buf=new ArrayBuffer(bin.length);const view=new Uint8Array(buf);for(let i=0;i<bin.length;i++)view[i]=bin.charCodeAt(i);p=await parseHDF5(buf,rec.name);}
+    else{p=await Promise.resolve(parseAny({name:rec.name},rec.rawText));}
+    if(!p)return null;
+    ensureSampleUid(p);
+    p.dbId=id;
+    ensureSampleThermal(p);
+    assignNewSampleDisplayOrder(p);
+    samples.push(p);
+    samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
+    return p;
+  }catch(e){console.error(e);toast('Load failed: '+(e.message||e));return null;}
+}
+function ensureBasketRoot(){
+  let root=basketRootId?combineList.find(c=>c.id===basketRootId):null;
+  if(!root){root={id:newSampleUid(),name:'第一バスケット',parentId:null,traces:[],chartSettings:readCombineChartSettingsFromDom()};combineList.push(root);basketRootId=root.id;}
+  return root;
+}
+function syncBasketRootTraces(){
+  const root=ensureBasketRoot();
+  root.traces=basketIncludedIds().map(id=>{const s=samples.find(x=>x.dbId===id);if(!s)return null;return{sampleUid:s.sampleUid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0};}).filter(Boolean);
+  return root;
+}
+async function plotFirstBasket(){
+  const ids=basketIncludedIds();
+  if(!ids.length){toast('Basket is empty or all excluded');return;}
+  for(const id of ids){await ensureDbFileLoaded(id);}
+  const root=syncBasketRootTraces();
+  activeCombineId=root.id;
+  basketPlotted=true;
+  renderAll();
+  redrawBasketParentPlot();
+  toast(`Parent plot: ${root.traces.length} trace(s)`);
+}
+async function syncBasketPlot(){
+  for(const id of basketIncludedIds())await ensureDbFileLoaded(id);
+  syncBasketRootTraces();
+  if(activeCombineId===basketRootId)renderAll();
+  redrawBasketParentPlot();
+}
+function redrawBasketParentPlot(){
+  const cv=document.getElementById('basketParentCanvas');
+  if(!cv)return;
+  if(basketParentChart){basketParentChart.destroy();basketParentChart=null;}
+  const list=basketIncludedIds().map(id=>samples.find(s=>s.dbId===id)).filter(Boolean);
+  if(!list.length)return;
+  const maxAll=Math.max(...list.map(s=>s.maxI||0),1);
+  const datasets=list.map((s,i)=>{
+    const col=COLORS[i%COLORS.length];
+    const off=i*maxAll*0.3;
+    return{label:(chartLegendForSample(s)||s.name||('trace'+(i+1))),data:(s.tth||[]).map((x,j)=>({x,y:(s.intensity[j]||0)+off})),borderColor:col,backgroundColor:col,borderWidth:1,pointRadius:0,tension:0,spanGaps:false};
+  });
+  basketParentChart=new Chart(cv,{type:'line',data:{datasets},options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:false,plugins:{legend:{display:true,labels:{boxWidth:8,font:{size:9}}}},scales:{x:{type:'linear',title:{display:true,text:'2θ (deg)',font:{size:9}}},y:{title:{display:false}}}}});
+}
 // --- DB duplicate finder (matched by name + rawText content) ---
 let dupFinderGroups=[];
 function dupContentKey(f){return String(f?.name||'').trim()+' '+String(f?.rawText||'');}
@@ -4135,6 +4340,7 @@ document.getElementById('dbIn').addEventListener('change',e=>{const f=e.target.f
   const savedTheme=localStorage.getItem('xrd_th_theme');
   setTheme(savedTheme==='dark'?'dark':'light');
   initDbPanelLayout();
+  initDockResizer();
   initListDnd();
   if(typeof indexedDB==='undefined')toast('IndexedDB not available — DB cache disabled (private mode, etc.).');
   try{syncXrdChartHeight();syncOuterChartHeight();const src=document.getElementById('xrdSourceMode');if(src)src.value=xrdSourceMode;updateXaxisModeUi();updateCombineXaxisModeUi();updateXrdModeButtons();updateCombineModeButtons();}catch(e){console.error(e);}
