@@ -1165,6 +1165,22 @@ function initListDnd(){
   bindListDnd('outerSegList','.outer-seg-row',row=>row.dataset.traceIdx,reorderCombineTrace);
   bindListDnd('seriesEditorMemberList','.series-order-row',row=>row.dataset.orderIdx,reorderSeriesDraft);
 }
+// Preserve per-row horizontal scroll (and the list's vertical scroll) across an
+// innerHTML rebuild, so editing a field deep in a row doesn't snap the row back.
+function captureRowScroll(el){
+  if(!el)return null;
+  return {top:el.scrollTop,fs:[...el.querySelectorAll('.file-row-fields-scroll')].map(r=>r.scrollLeft)};
+}
+function restoreRowScroll(el,snap){
+  if(!el||!snap)return;
+  const apply=()=>{
+    el.scrollTop=snap.top;
+    const rows=[...el.querySelectorAll('.file-row-fields-scroll')];
+    rows.forEach((r,i)=>{if(snap.fs[i]!=null)r.scrollLeft=snap.fs[i];});
+  };
+  apply();
+  requestAnimationFrame(apply); // re-apply after layout settles (chart redraws can shift widths)
+}
 function legendYFromPoints(pts,fallbackY){
   const valid=(pts||[]).filter(p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y));
   if(!valid.length)return fallbackY;
@@ -1879,6 +1895,7 @@ function renderSampleList(){
   const el=document.getElementById('sampleList');
   if(!samples.length){el.innerHTML='<div class="empty">No samples</div>';return;}
   const ordered=samplesInDisplayOrder();
+  const _sc=captureRowScroll(el);
   el.innerHTML=ordered.map((s,oi)=>{
     const i=samples.indexOf(s);
     const up=oi>0?'':'disabled';
@@ -1920,12 +1937,13 @@ function renderSampleList(){
           ${xrdGainMode==='manual'?`<label class="file-row-field">Gain<input class="num" type="number" step="0.1" min="0.01" value="${(isFinite(s.intensityGainManual)&&s.intensityGainManual>0)?s.intensityGainManual:1}" oninput="setManualGain(${i},this.value)"></label>`:''}
           <label class="file-row-field">Start<input class="txt-sm" type="datetime-local" step="60" value="${esc(formatDatetimeLocalValue(thermalUiStartDate(s)))}" onchange="setThermalTimeStartOverride(${i},this.value)"></label>
           <label class="file-row-field">End<input class="txt-sm" type="datetime-local" step="60" value="${esc(formatDatetimeLocalValue(thermalUiEndDate(s)))}" onchange="setThermalTimeEndOverride(${i},this.value)"></label>
-          <label class="file-row-field file-row-field--narrow">T edit<input class="num" type="number" step="0.1" placeholder="auto" value="${esc(thermalUiTempStr(s))}" oninput="setSampleThermalTemp(${i},this.value)"></label>
+          <label class="file-row-field file-row-field--narrow">T edit<input class="num" type="number" step="0.1" placeholder="auto" value="${esc(thermalUiTempStr(s))}" onchange="setSampleThermalTemp(${i},this.value)"></label>
           ${segFields}
         </div>
       </div>
     </div>`;
   }).join('');
+  restoreRowScroll(el,_sc);
 }
 
 function readXrdScaleOpts(){
@@ -2732,6 +2750,7 @@ function renderOuterSegmentList(){
   if(!cmb){el.innerHTML='<div class="empty">Create a Combine first (+ New)</div>';return;}
   const all=tracesForCombine();
   if(!all.length){el.innerHTML='<div class="empty">Select samples from the list above</div>';return;}
+  const _sc=captureRowScroll(el);
   el.innerHTML=all.map(({s,seg,ti})=>{
     const col=seg.color&&seg.color.trim()?seg.color:s.color;
     const defLeg=autoChartLegend(s);
@@ -2763,6 +2782,7 @@ function renderOuterSegmentList(){
       </div>
     </div>`;
   }).join('')+`<div class="seg-item" style="color:var(--text3);padding:.4rem .25rem 0;margin-top:4px">traces: ${all.length}</div>`;
+  restoreRowScroll(el,_sc);
 }
 function redrawOuterChart(){
   if(outerChart)outerChart.destroy();
@@ -3061,7 +3081,6 @@ function setCombineTraceProp(ti,key,val){
   const cmb=getActiveCombine();
   if(!cmb||!cmb.traces||!cmb.traces[ti])return;
   cmb.traces[ti][key]=val;
-  renderOuterSegmentList();
   redrawOuterChart();
 }
 function moveCombineTrace(ti,dir){
