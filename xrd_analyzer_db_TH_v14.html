@@ -524,8 +524,8 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
     <label style="font-size:11px;display:block;margin-bottom:.4rem">Tags (comma separated)<input class="txt" id="fileMetaEditTags" placeholder="e.g. LN2,pre-anneal,batchA" style="margin-top:2px"></label>
     <label style="font-size:11px;display:block;margin-bottom:.4rem">Capillary size mm (optional)<input class="txt" id="fileMetaEditCapillarySize" type="number" step="0.001" placeholder="e.g. 0.300" style="margin-top:2px"></label>
     <label style="font-size:11px;display:block;margin-bottom:.4rem">Measurement time min (auto if start/end set)<input class="txt" id="fileMetaEditMeasurementTime" type="number" step="0.01" placeholder="e.g. 15.5" style="margin-top:2px"></label>
-    <label style="font-size:11px;display:block;margin-bottom:.4rem">Meas. start (optional)<input class="txt" id="fileMetaEditMeasStart" type="datetime-local" style="margin-top:2px"></label>
-    <label style="font-size:11px;display:block;margin-bottom:.4rem">Meas. end (optional)<input class="txt" id="fileMetaEditMeasEnd" type="datetime-local" style="margin-top:2px"></label>
+    <label style="font-size:11px;display:block;margin-bottom:.4rem">Meas. start (optional)<input class="txt" id="fileMetaEditMeasStart" type="datetime-local" lang="en" style="margin-top:2px"></label>
+    <label style="font-size:11px;display:block;margin-bottom:.4rem">Meas. end (optional)<input class="txt" id="fileMetaEditMeasEnd" type="datetime-local" lang="en" style="margin-top:2px"></label>
     <label style="font-size:11px;display:block;margin-bottom:.4rem">Temperature °C (blank = auto from filename)<input class="txt" id="fileMetaEditTempC" type="number" step="0.1" placeholder="e.g. 25.0" style="margin-top:2px"></label>
     <div class="ctrl-row" style="justify-content:flex-end;margin-top:.5rem">
       <button class="btn" onclick="closeFileMetaEditModal()">Cancel</button>
@@ -2023,8 +2023,8 @@ function renderSampleList(){
           </div>
           ${xrdOffsetMode==='manual'?`<label class="file-row-field">Offset<input class="num" type="number" step="10" value="${isFinite(s.xrdOffsetManual)?s.xrdOffsetManual:0}" oninput="setManualOffset(${i},this.value)"></label>`:''}
           ${xrdGainMode==='manual'?`<label class="file-row-field">Gain<input class="num" type="number" step="0.1" min="0.01" value="${(isFinite(s.intensityGainManual)&&s.intensityGainManual>0)?s.intensityGainManual:1}" oninput="setManualGain(${i},this.value)"></label>`:''}
-          <label class="file-row-field">Start<input class="txt-sm" type="datetime-local" step="60" value="${esc(formatDatetimeLocalValue(thermalUiStartDate(s)))}" onchange="setThermalTimeStartOverride(${i},this.value)"></label>
-          <label class="file-row-field">End<input class="txt-sm" type="datetime-local" step="60" value="${esc(formatDatetimeLocalValue(thermalUiEndDate(s)))}" onchange="setThermalTimeEndOverride(${i},this.value)"></label>
+          <label class="file-row-field">Start<input class="txt-sm" type="datetime-local" lang="en" step="60" value="${esc(formatDatetimeLocalValue(thermalUiStartDate(s)))}" onchange="setThermalTimeStartOverride(${i},this.value)"></label>
+          <label class="file-row-field">End<input class="txt-sm" type="datetime-local" lang="en" step="60" value="${esc(formatDatetimeLocalValue(thermalUiEndDate(s)))}" onchange="setThermalTimeEndOverride(${i},this.value)"></label>
           <label class="file-row-field file-row-field--narrow">T edit<input class="num" type="number" step="0.1" placeholder="auto" value="${esc(thermalUiTempStr(s))}" onchange="setSampleThermalTemp(${i},this.value)"></label>
           ${segFields}
         </div>
@@ -2925,11 +2925,13 @@ function setThermalTimeStartOverride(i,v){
   const d=parseDatetimeLocalToDate(v);
   samples[i].thermalTimeStartOverride=d?d.toISOString():null;
   refreshSegmentsForSample(samples[i]);renderAll();
+  persistSampleMetaToDb(samples[i]);
 }
 function setThermalTimeEndOverride(i,v){
   const d=parseDatetimeLocalToDate(v);
   samples[i].thermalTimeEndOverride=d?d.toISOString():null;
   refreshSegmentsForSample(samples[i]);renderAll();
+  persistSampleMetaToDb(samples[i]);
 }
 function setSampleThermalTemp(i,v){
   const n=parseFloat(v);
@@ -2947,6 +2949,7 @@ function setSampleThermalTemp(i,v){
     s.tempStart=n;s.tempEnd=n;s.tempSetPoint=n;
   }
   refreshSegmentsForSample(s);renderAll();
+  persistSampleMetaToDb(s);
 }
 function setThermalTempStartOverride(i,v){setSampleThermalTemp(i,v);}
 function setThermalTempEndOverride(i,v){setSampleThermalTemp(i,v);}
@@ -3679,8 +3682,8 @@ function renderDbFileItem(f){
   const ms=dbFileMeasurementStartLabel(f);
   const me=dbFileMeasurementEndLabel(f);
   const date=f.savedAt?new Date(f.savedAt).toLocaleDateString():'';
-  return`<div class="db-item" onclick="loadFileFromDb(${fid})">
-    <input type="checkbox" class="db-cache-chk" ${isInFirstBasket(fid)?'checked':''} onclick="event.stopPropagation();toggleCacheToBasket(${fid},this.checked)" title="Add to first basket (parent plot)">
+  return`<div class="db-item" style="cursor:default">
+    <input type="checkbox" class="db-cache-chk" ${isInFirstBasket(fid)?'checked':''} onclick="event.stopPropagation();toggleCacheToBasket(${fid},this.checked)" title="Add to first basket (check), then Plot parent">
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
         <span>${esc(f.name||'(no name)')}</span>
@@ -3910,6 +3913,37 @@ async function confirmFileFolderMeta(){
     toast('File folder updated');
   }catch(e){toast(e.message);}
 }
+// Apply a DB cache record's stored metadata (temperature, times, label, tags,
+// capillary) onto a freshly parsed sample, so DB-side edits show up in the plot.
+function applyDbRecordMeta(p,rec){
+  if(!p||!rec)return;
+  p.dbId=rec.id;
+  p.meta=p.meta||{};
+  if(rec.sampleLabel!=null&&String(rec.sampleLabel).trim())p.meta.sampleLabel=String(rec.sampleLabel).trim();
+  if(Array.isArray(rec.tags))p.meta.tags=[...rec.tags];
+  if(Number.isFinite(+rec.capillarySize))p.meta.capillarySize=+rec.capillarySize;
+  if(Number.isFinite(+rec.measurementTimeMin))p.meta.measurementTimeMin=+rec.measurementTimeMin;
+  if(rec.measurementStartIso){const d=new Date(rec.measurementStartIso);if(!isNaN(d.getTime())){p.timeStart=d;p.thermalTimeStartOverride=d.toISOString();}}
+  if(rec.measurementEndIso){const d=new Date(rec.measurementEndIso);if(!isNaN(d.getTime())){p.timeEnd=d;p.thermalTimeEndOverride=d.toISOString();}}
+  if(rec.tempC!=null&&Number.isFinite(+rec.tempC)){const n=+rec.tempC;p.thermalTempOverride=n;p.thermalTempStartOverride=n;p.thermalTempEndOverride=n;p.tempSetPoint=n;p.tempStart=n;p.tempEnd=n;}
+  try{refreshSegmentsForSample(p);}catch(_){}
+}
+// Write a loaded sample's edited temperature / times back to its DB cache record
+// so the change survives a browser refresh.
+async function persistSampleMetaToDb(s){
+  if(!s||s.dbId==null)return;
+  try{
+    const rec=await adapter.getFile(s.dbId);
+    if(!rec)return;
+    const tempC=Number.isFinite(+s.thermalTempOverride)?+s.thermalTempOverride
+      :(Number.isFinite(+s.tempSetPoint)?+s.tempSetPoint:null);
+    const startIso=s.thermalTimeStartOverride||(s.timeStart?s.timeStart.toISOString():(rec.measurementStartIso||null));
+    const endIso=s.thermalTimeEndOverride||(s.timeEnd?s.timeEnd.toISOString():(rec.measurementEndIso||null));
+    await adapter.saveFile({...rec,id:rec.id,tempC:Number.isFinite(tempC)?tempC:null,measurementStartIso:startIso,measurementEndIso:endIso});
+    dbFiles=await adapter.listFiles().catch(()=>dbFiles);
+    renderDbFileList();renderFirstBasket();
+  }catch(e){console.error(e);}
+}
 async function loadFileFromDb(id){
   try{
     const rec=await adapter.getFile(id);
@@ -3941,6 +3975,7 @@ async function loadFileFromDb(id){
     ensureSampleUid(p);
     p.color=COLORS[samples.length%COLORS.length];
     ensureSampleThermal(p);
+    applyDbRecordMeta(p,rec);
     assignNewSampleDisplayOrder(p);
     samples.push(p);
     samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
@@ -4010,7 +4045,7 @@ function renderFirstBasket(){
 async function ensureDbFileLoaded(id){
   id=Number(id);
   const existing=samples.find(s=>s.dbId===id);
-  if(existing)return existing;
+  if(existing){existing.fromBasket=true;return existing;}
   try{
     const rec=await adapter.getFile(id);
     if(!rec)return null;
@@ -4023,7 +4058,9 @@ async function ensureDbFileLoaded(id){
     if(!p)return null;
     ensureSampleUid(p);
     p.dbId=id;
+    p.fromBasket=true;
     ensureSampleThermal(p);
+    applyDbRecordMeta(p,rec);
     assignNewSampleDisplayOrder(p);
     samples.push(p);
     samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
@@ -4046,7 +4083,7 @@ function pruneOrphanBasketSamples(){
   const keep=new Set(firstBasket);
   const removed=new Set();
   samples=samples.filter(s=>{
-    if(s.dbId!=null&&!keep.has(s.dbId)){removed.add(s.sampleUid);return false;}
+    if(s.fromBasket&&s.dbId!=null&&!keep.has(s.dbId)){removed.add(s.sampleUid);return false;}
     return true;
   });
   if(removed.size){
@@ -4276,9 +4313,13 @@ async function confirmFileMetaEdit(){
   try{
     const rec=await adapter.getFile(id);
     if(!rec)return;
-    await adapter.saveFile({...rec,id,sampleLabel,tags,capillarySize:Number.isFinite(capillarySize)?capillarySize:null,measurementTimeMin:Number.isFinite(measurementTimeMin)?measurementTimeMin:null,measurementStartIso,measurementEndIso,tempC:Number.isFinite(tempC)?tempC:null});
+    const saved={...rec,id,sampleLabel,tags,capillarySize:Number.isFinite(capillarySize)?capillarySize:null,measurementTimeMin:Number.isFinite(measurementTimeMin)?measurementTimeMin:null,measurementStartIso,measurementEndIso,tempC:Number.isFinite(tempC)?tempC:null};
+    await adapter.saveFile(saved);
     dbFiles=await adapter.listFiles().catch(()=>[]);
-    renderDbFileList();
+    renderDbFileList();renderFirstBasket();
+    // reflect the edit into an already-loaded sample (and its plot) right away
+    const loaded=samples.find(s=>s.dbId===id);
+    if(loaded){applyDbRecordMeta(loaded,saved);renderAll();if(basketPlotted)redrawBasketParentPlot();}
     toast('Metadata updated');
   }catch(e){toast(e.message);}
 }
