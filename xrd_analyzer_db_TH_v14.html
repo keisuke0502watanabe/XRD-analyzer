@@ -42,6 +42,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .db-dock-resizer:hover,.db-dock-resizer.dragging{background:color-mix(in srgb,var(--accent) 35%, transparent)}
 .app.db-layout-sidebar .db-dock-resizer{top:0;right:-3px;width:6px;height:100%;cursor:col-resize}
 .app.db-layout-top .db-dock-resizer{left:0;bottom:-3px;width:100%;height:6px;cursor:row-resize}
+.db-col-splitter{flex:0 0 auto;background:transparent;z-index:4;touch-action:none}
+.db-col-splitter:hover,.db-col-splitter.dragging{background:color-mix(in srgb,var(--accent) 35%, transparent)}
+.app.db-layout-sidebar .db-col-splitter{height:6px;width:100%;cursor:row-resize}
+.app.db-layout-top .db-col-splitter{width:6px;height:100%;cursor:col-resize}
 .db-dock-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:.45rem .65rem;border-bottom:1px solid var(--border);flex-shrink:0}
 .db-dock-toolbar .title{margin:0}
 .db-dock-layout{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)}
@@ -276,7 +280,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
       </div>
       <div class="db-dock-col db-col-basket">
         <div class="section">
-          <div class="title">第一バスケット → 親plot</div>
+          <div class="title">First basket → parent plot</div>
           <div style="font-size:9px;color:var(--text3);margin:-2px 0 4px">Check files in the cache above to stage them here (not loaded until you plot). ⠿ drag to reorder, uncheck to exclude, then Plot.</div>
           <div class="ctrl-row">
             <button class="btn green" onclick="plotFirstBasket()">▶ Plot parent</button>
@@ -325,8 +329,6 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
       <button class="btn" onclick="exportDataJson()">Export Data</button>
       <button class="btn" id="themeToggleBtn" onclick="toggleTheme()">Theme: White</button>
       <div class="sep"></div>
-      <button class="btn" onclick="exportXrdChart('png')">XRD PNG</button>
-      <button class="btn" onclick="exportXrdChart('pdf')">XRD PDF</button>
       <button class="btn" onclick="exportThermalChart('png')">Thermal PNG</button>
       <button class="btn" onclick="exportThermalChart('pdf')">Thermal PDF</button>
       <button class="btn" onclick="exportCombineChart('png')">Combine PNG</button>
@@ -349,56 +351,6 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
       <div class="samples-charts-col">
         <div class="charts-column">
       <div id="mainLayout" class="layout">
-        <div class="panel" id="xrdPanel">
-          <div class="panel-head">
-            <span class="panel-title">XRD Pattern</span>
-            <div class="ctrl-row">
-              <span>Mode</span>
-              <button class="btn" onclick="setXrdMode('overlay')">Overlay</button>
-              <button class="btn" onclick="setXrdMode('stack')">Stack</button>
-              <span>Offset%</span>
-              <input class="num" id="offsetInput" type="number" step="5" value="30" oninput="redrawXrd()">
-              <span>Offset mode</span>
-              <button class="btn" id="offsetModeBtn" onclick="toggleXrdOffsetMode()">Equal</button>
-              <span style="font-size:10px;color:var(--text3)">offset order → Samples ↑↓</span>
-              <span>Gain mode</span>
-              <button class="btn" id="gainModeBtn" onclick="toggleXrdGainMode()">Equal</button>
-              <span>Gain%</span>
-              <input class="num" id="globalGainInput" type="number" step="5" value="100" min="1" oninput="redrawXrd()">
-              <span class="export-btns">
-                <button type="button" class="btn" onclick="exportXrdChart('png')">PNG</button>
-                <button type="button" class="btn" onclick="exportXrdChart('pdf')">PDF</button>
-              </span>
-            </div>
-          </div>
-          <div class="panel-body">
-            <div class="xrd-controls">
-              <label>Data source<select class="txt-sm" id="xrdSourceMode" onchange="setXrdSourceMode(this.value)"><option value="all">All samples</option><option value="series">Active series</option></select></label>
-              <label>Height (px)<input class="num" id="xrdChartHeight" type="number" min="200" max="2000" step="20" value="420" oninput="applyXrdChartLayout()"></label>
-              <label><span id="xAxisMinLbl">2θ min</span><input class="num" id="xMin" type="number" step="0.5" value="2" oninput="redrawXrd()"></label>
-              <label><span id="xAxisMaxLbl">2θ max</span><input class="num" id="xMax" type="number" step="0.5" value="32" oninput="redrawXrd()"></label>
-              <label>Y min<input class="num" id="xrdYMin" type="number" step="10" placeholder="auto" oninput="redrawXrd()"></label>
-              <label>Y max<input class="num" id="xrdYMax" type="number" step="10" placeholder="auto" oninput="redrawXrd()"></label>
-              <label>X mode<select class="txt-sm" id="xrdXAxisMode" onchange="setXrdXAxisMode(this.value)"><option value="2theta">2theta (deg)</option><option value="d">d (nm)</option><option value="nm-1">nm^-1</option></select></label>
-              <label>X-axis label<input class="txt-sm" id="xrdXTitle" type="text" value="2theta (deg)" oninput="redrawXrd()"></label>
-              <label>Y-axis label<input class="txt-sm" id="xrdYTitle" type="text" value="Intensity (cps)" oninput="redrawXrd()"></label>
-            </div>
-            <div class="title" style="margin-bottom:4px">Traces (legend &amp; color)</div>
-            <div class="sample-list-hint" style="margin-bottom:6px">One row per trace — filename scrolls vertically; fields scroll horizontally</div>
-            <div class="legend-format-row" id="legendFormatUi"></div>
-            <div class="avg-pattern-row" id="avgPatternUi"></div>
-            <div class="xrd-trace-list" id="xrdTraceList"></div>
-            <div class="xrd-canvas-wrap" id="xrdCanvasWrap">
-              <canvas id="xrdCanvas"></canvas>
-            </div>
-            <div class="chart-export-bar">
-              <span style="font-size:10px;color:var(--text3);margin-right:auto">Export displayed chart</span>
-              <button type="button" class="btn" onclick="exportXrdChart('png')">PNG</button>
-              <button type="button" class="btn" onclick="exportXrdChart('pdf')">PDF</button>
-            </div>
-          </div>
-        </div>
-
         <div class="panel" id="thermalPanel">
           <div class="panel-head">
             <span class="panel-title">Thermal History</span>
@@ -484,6 +436,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <label>X-axis label<input class="txt-sm" id="combineXTitle" type="text" value="2theta (deg)" oninput="redrawOuterChart()"></label>
               <label>Y-axis label<input class="txt-sm" id="combineYTitle" type="text" value="Intensity (cps)" oninput="redrawOuterChart()"></label>
             </div>
+            <div class="legend-format-row" id="legendFormatUi"></div>
             <div class="combine-canvas-wrap" id="combineCanvasWrap">
               <canvas id="outerCanvas"></canvas>
             </div>
@@ -500,13 +453,6 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
           <div class="panel">
             <div class="panel-head">
               <span class="panel-title">Samples</span>
-              <div class="ctrl-row">
-                <span>Layout</span>
-                <button class="btn" onclick="setLayout('tb')">Top/Bottom</button>
-                <button class="btn" onclick="setLayout('lr')">Left/Right</button>
-                <button class="btn" onclick="setLayout('xrd')">XRD only</button>
-                <button class="btn" onclick="setLayout('thermal')">Thermal only</button>
-              </div>
             </div>
             <div class="panel-body">
               <div class="sample-list-hint">One row per file — filename scrolls vertically; fields scroll horizontally</div>
@@ -716,6 +662,7 @@ let xrdXAxisMode='2theta'; // 2theta | d | nm-1
 const LEGEND_FORMAT_OPTIONS=[
   {id:'sample',label:'Sample name'},
   {id:'measStart',label:'Meas. start time'},
+  {id:'measStartDate',label:'Meas. start date'},
   {id:'measTime',label:'Meas. time'},
   {id:'temp',label:'Temp'},
   {id:'filename',label:'Filename'}
@@ -728,7 +675,7 @@ let legendBesideXOffsetPx=0;
 const avgSelectUids=new Set();
 let dbFiles=[],dbProjects=[],dbThermalSeries=[],toastTimer=null;
 let dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',dateFrom:'',dateTo:'',sort:'name-asc'};
-const DB_TREE_FIELDS=['sample','measStart','temp','filename','tags','capillary','measEnd','measTime','date'];
+const DB_TREE_FIELDS=['sample','measStartDate','measStart','temp','filename','tags','capillary','measEnd','measTime','date'];
 let dbTreeOrder=['sample','measStart','temp','filename','tags','capillary','measEnd'];
 let dbTreeCollapsed={};
 let uiTheme='light';
@@ -871,6 +818,7 @@ function setDbPanelLayout(v){
   }
   document.querySelectorAll('.dbPanelLayoutSelect').forEach(el=>{el.value=dbPanelLayout;});
   try{localStorage.setItem('xrd_th_db_panel_layout',dbPanelLayout);}catch(_e){}
+  try{applyDockColGrows();}catch(_e){}
   setTimeout(()=>{try{resizeAllCharts();}catch(_e){}},0);
 }
 function initDbPanelLayout(){
@@ -917,6 +865,66 @@ function initDockResizer(){
   rez.addEventListener('pointerup',end);
   rez.addEventListener('pointercancel',end);
 }
+// Resizable proportions between DB dock columns (heights in sidebar, widths in top).
+const DOCK_COLS=['db-col-files','db-col-basket','db-col-projects','db-col-series'];
+const DOCK_COL_DEFAULT={'db-col-files':2,'db-col-basket':3,'db-col-projects':1.5,'db-col-series':1.5};
+function dockColGrowKey(){return 'xrd_th_dock_colgrow_'+dbPanelLayout;}
+function applyDockColGrows(){
+  const body=document.querySelector('.db-dock-body');if(!body)return;
+  let saved={};try{saved=JSON.parse(localStorage.getItem(dockColGrowKey())||'{}')||{};}catch(_){}
+  DOCK_COLS.forEach(cls=>{
+    const el=body.querySelector('.'+cls);if(!el)return;
+    const g=Number.isFinite(+saved[cls])?+saved[cls]:DOCK_COL_DEFAULT[cls];
+    el.style.flex=g+' 1 0';
+  });
+}
+function saveDockColGrows(){
+  const body=document.querySelector('.db-dock-body');if(!body)return;
+  const o={};
+  DOCK_COLS.forEach(cls=>{const el=body.querySelector('.'+cls);if(el)o[cls]=parseFloat(getComputedStyle(el).flexGrow)||1;});
+  try{localStorage.setItem(dockColGrowKey(),JSON.stringify(o));}catch(_){}
+}
+function wireDockSplitter(sp,prev,next){
+  let drag=null;
+  sp.addEventListener('pointerdown',e=>{
+    e.preventDefault();
+    const top=dbPanelLayout==='top';
+    drag={top,startPos:top?e.clientX:e.clientY,
+      sizePrev:top?prev.offsetWidth:prev.offsetHeight,
+      sizeNext:top?next.offsetWidth:next.offsetHeight,
+      growPrev:parseFloat(getComputedStyle(prev).flexGrow)||1,
+      growNext:parseFloat(getComputedStyle(next).flexGrow)||1};
+    sp.classList.add('dragging');
+    try{sp.setPointerCapture(e.pointerId);}catch(_){}
+    document.body.style.userSelect='none';
+  });
+  sp.addEventListener('pointermove',e=>{
+    if(!drag)return;
+    const pos=drag.top?e.clientX:e.clientY;
+    const total=drag.sizePrev+drag.sizeNext;
+    const newPrev=Math.max(40,Math.min(total-40,drag.sizePrev+(pos-drag.startPos)));
+    const sumG=drag.growPrev+drag.growNext;
+    const gp=sumG*newPrev/total;
+    prev.style.flex=gp+' 1 0';
+    next.style.flex=(sumG-gp)+' 1 0';
+  });
+  const end=e=>{if(!drag)return;document.body.style.userSelect='';sp.classList.remove('dragging');try{sp.releasePointerCapture(e.pointerId);}catch(_){}drag=null;saveDockColGrows();resizeAllCharts();};
+  sp.addEventListener('pointerup',end);
+  sp.addEventListener('pointercancel',end);
+}
+function buildDockColSplitters(){
+  const body=document.querySelector('.db-dock-body');if(!body)return;
+  body.querySelectorAll('.db-col-splitter').forEach(n=>n.remove());
+  const cols=DOCK_COLS.map(c=>body.querySelector('.'+c)).filter(Boolean);
+  for(let i=0;i<cols.length-1;i++){
+    const sp=document.createElement('div');
+    sp.className='db-col-splitter';
+    sp.title='Drag to resize';
+    cols[i].after(sp);
+    wireDockSplitter(sp,cols[i],cols[i+1]);
+  }
+}
+function initDockColumns(){applyDockColGrows();buildDockColSplitters();}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function normalizeFolderPath(p){
   if(p==null||String(p).trim()==='')return'';
@@ -1259,10 +1267,16 @@ function legendYFromPoints(pts,fallbackY){
   const valid=(pts||[]).filter(p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y));
   if(!valid.length)return fallbackY;
   if(legendBesideYMode==='baseline')return Math.min(...valid.map(p=>p.y));
-  const xmax=Math.max(...valid.map(p=>p.x));
-  const xspan=Math.max(...valid.map(p=>p.x))-Math.min(...valid.map(p=>p.x));
+  const xmaxV=Math.max(...valid.map(p=>p.x));
+  const xminV=Math.min(...valid.map(p=>p.x));
+  const xspan=xmaxV-xminV;
   const tol=Math.max(1e-9,xspan*1e-6);
-  const atMax=valid.filter(p=>p.x>=xmax-tol);
+  if(legendBesideYMode==='xMin'){
+    const atMin=valid.filter(p=>p.x<=xminV+tol);
+    if(!atMin.length)return fallbackY;
+    return atMin.reduce((s,p)=>s+p.y,0)/atMin.length;
+  }
+  const atMax=valid.filter(p=>p.x>=xmaxV-tol);
   if(!atMax.length)return fallbackY;
   return atMax.reduce((s,p)=>s+p.y,0)/atMax.length;
 }
@@ -1952,7 +1966,7 @@ function handleFiles(fileList){
             try{await adapter.saveFile(dbPayload);}catch(err){console.error(err);toast('DB save: '+(err.message||err));}
           }
         }else{
-          toast(`Could not parse: ${f.name}（Supported: .ras .scn .xrdml .hdf5）`);
+          toast(`Could not parse: ${f.name} (Supported: .ras .scn .xrdml .hdf5)`);
         }
       }catch(e){console.error(e);toast(`Processing error: ${f.name} - ${e.message||e}`);}
       finishRasBatch(pendingRef);
@@ -2417,6 +2431,7 @@ function buildOuterCombineDatasets(){
   return d;
 }
 function redrawXrd(){
+  if(!document.getElementById('xrdCanvas')){if(xrdChart){try{xrdChart.destroy();}catch(_){}xrdChart=null;}return;}
   if(xrdChart)xrdChart.destroy();
   syncXrdChartHeight();
   const vis=xrdVisibleSamples();
@@ -2639,7 +2654,7 @@ function renderPatternTree(){
     html+=`<div class="pattern-node${active?' active':''}" style="padding-left:${4+depth*14}px" onclick="setActiveCombineId('${esc(node.id)}')">
       <span class="pattern-node-name" title="${esc(node.name||'')}">${depth>0?'▸ ':''}${esc(node.name||'Pattern')}</span>
       <span class="pattern-node-meta">${n} tr</span>
-      <button type="button" class="btn" style="padding:0 5px;font-size:9px" onclick="event.stopPropagation();addChildPattern('${esc(node.id)}')" title="Add child pattern (narrow from this)">+子</button>
+      <button type="button" class="btn" style="padding:0 5px;font-size:9px" onclick="event.stopPropagation();addChildPattern('${esc(node.id)}')" title="Add child pattern (narrow from this)">+ Child</button>
     </div>`;
     childrenOf(node.id).forEach(ch=>walk(ch,depth+1));
   };
@@ -3140,7 +3155,7 @@ function removeSample(i){
 function setScanRate(i,v){const n=parseFloat(v);samples[i].scanRate=isNaN(n)?null:n;refreshSegmentsForSample(samples[i]);renderAll();}
 function setTempSetPoint(i,v){setSampleThermalTemp(i,v);}
 function setRampStart(i,v){const n=parseFloat(v);samples[i].rampStartTemp=isNaN(n)?null:n;refreshSegmentsForSample(samples[i]);renderAll();}
-function setLayout(l){layout=l;const ml=document.getElementById('mainLayout');ml.classList.toggle('lr',l==='lr');document.getElementById('xrdPanel').style.display=l==='thermal'?'none':'block';document.getElementById('thermalPanel').style.display=l==='xrd'?'none':'block';renderAll();}
+function setLayout(l){layout=l;const ml=document.getElementById('mainLayout');if(ml)ml.classList.toggle('lr',l==='lr');const xp=document.getElementById('xrdPanel');if(xp)xp.style.display=l==='thermal'?'none':'block';const tp=document.getElementById('thermalPanel');if(tp)tp.style.display=l==='xrd'?'none':'block';renderAll();}
 function setXrdMode(m){xrdMode=m;redrawXrd();}
 function setCombineMode(m){combineMode=m;updateCombineModeButtons();redrawOuterChart();}
 function toggleXrdOffsetMode(){xrdOffsetMode=xrdOffsetMode==='equal'?'manual':'equal';updateXrdModeButtons();renderSampleList();redrawXrd();}
@@ -3322,7 +3337,7 @@ function hydrateProject(payload,{replace=true}={}){
   xrdGainMode=payload.xrdGainMode==='manual'?'manual':'equal';
   legendFormatParts=normalizeLegendFormatParts(payload.legendFormatParts);
   xrdLegendPosition=payload.xrdLegendPosition==='beside'?'beside':'top';
-  if(payload.legendBesideYMode==='baseline'||payload.legendBesideYMode==='xMax')legendBesideYMode=payload.legendBesideYMode;
+  if(payload.legendBesideYMode==='baseline'||payload.legendBesideYMode==='xMax'||payload.legendBesideYMode==='xMin')legendBesideYMode=payload.legendBesideYMode;
   else if(Number.isFinite(+payload.legendBesideYFrac)&&+payload.legendBesideYFrac<=15)legendBesideYMode='baseline';
   else legendBesideYMode='xMax';
   legendBesideYOffsetPx=Number.isFinite(+payload.legendBesideYOffsetPx)?+payload.legendBesideYOffsetPx:0;
@@ -3487,6 +3502,12 @@ function legendPartValue(s,partId){
     const iso=dbFileMeasurementStartIso(meta);
     return iso?dbIsoShortLabel(iso):'';
   }
+  if(partId==='measStartDate'){
+    const iso=dbFileMeasurementStartIso(meta);
+    if(!iso)return '';
+    const d=new Date(iso);
+    return isNaN(d.getTime())?'':d.toLocaleDateString();
+  }
   if(partId==='measTime'){
     const m=dbFileMeasurementTimeMin(meta);
     return Number.isFinite(m)?`${m.toFixed(2)} min`:'';
@@ -3521,21 +3542,21 @@ function renderLegendFormatUi(){
   const parts=new Set(legendFormatParts||[]);
   const beside=xrdLegendPosition==='beside';
   const adjHtml=beside?`<span class="legend-adjust">
-    <label class="legend-part"><span>Y anchor</span><select class="txt-sm" id="legendBesideYModeSelect" title="Infer legend Y from visible trace data" onchange="setLegendBesideAdj('yMode',this.value)"><option value="baseline">Baseline</option><option value="xMax">At X max</option></select></label>
+    <label class="legend-part"><span>Y anchor</span><select class="txt-sm" id="legendBesideYModeSelect" title="Align each legend label to the trace's baseline offset (intensity at X min / X max), or to its minimum" onchange="setLegendBesideAdj('yMode',this.value)"><option value="xMin">At X min</option><option value="xMax">At X max</option><option value="baseline">Baseline (min)</option></select></label>
     <label class="legend-part"><span>ΔY px</span><input class="num" type="number" step="1" value="${legendBesideYOffsetPx}" title="Global vertical nudge (pixels)" oninput="setLegendBesideAdj('yPx',this.value)"></label>
     <label class="legend-part"><span>ΔX px</span><input class="num" type="number" step="1" value="${legendBesideXOffsetPx}" title="Horizontal offset from plot edge (pixels)" oninput="setLegendBesideAdj('xPx',this.value)"></label>
   </span>`:'';
   el.innerHTML=`<span class="legend-format-label">Graph legend</span>`+LEGEND_FORMAT_OPTIONS.map(o=>
     `<label class="legend-part"><input type="checkbox" ${parts.has(o.id)?'checked':''} onchange="toggleLegendFormatPart('${o.id}',this.checked)">${esc(o.label)}</label>`
-  ).join('')+`<label class="legend-part legend-position"><span>Position</span><select class="txt-sm" id="xrdLegendPositionSelect" onchange="setXrdLegendPosition(this.value)"><option value="top">Top</option><option value="beside">Beside traces</option></select></label>`+adjHtml;
+  ).join('')+`<label class="legend-part legend-position"><span>Position</span><select class="txt-sm" id="xrdLegendPositionSelect" onchange="setXrdLegendPosition(this.value)"><option value="top">Top</option><option value="beside">Side</option></select></label>`+adjHtml;
   const posSel=document.getElementById('xrdLegendPositionSelect');
   if(posSel)posSel.value=beside?'beside':'top';
   const modeSel=document.getElementById('legendBesideYModeSelect');
-  if(modeSel)modeSel.value=legendBesideYMode==='baseline'?'baseline':'xMax';
+  if(modeSel)modeSel.value=(legendBesideYMode==='baseline'||legendBesideYMode==='xMin')?legendBesideYMode:'xMax';
 }
 function setLegendBesideAdj(field,value){
   const n=parseFloat(value);
-  if(field==='yMode')legendBesideYMode=(value==='baseline')?'baseline':'xMax';
+  if(field==='yMode')legendBesideYMode=(value==='baseline'||value==='xMin')?value:'xMax';
   else if(field==='yPx')legendBesideYOffsetPx=Number.isFinite(n)?n:0;
   else if(field==='xPx')legendBesideXOffsetPx=Number.isFinite(n)?n:0;
   redrawXrd();
@@ -3605,6 +3626,7 @@ function dbTreeLabel(field,f){
   }
   if(field==='filename')return f?.name||'(no name)';
   if(field==='tags'){const t=dbFileTags(f);return (t&&t.length)?t.join(', '):'Untagged';}
+  if(field==='measStartDate'){const iso=dbFileMeasurementStartIso(f);if(!iso)return 'Unknown date';const d=new Date(iso);return isNaN(d.getTime())?'Unknown date':d.toLocaleDateString();}
   return'Unknown';
 }
 function dbTreeSortValue(field,f){
@@ -3617,10 +3639,11 @@ function dbTreeSortValue(field,f){
   if(field==='temp'){const t=dbFileTempC(f);return Number.isFinite(t)?t:Infinity;}
   if(field==='filename')return (f?.name||'').toLowerCase();
   if(field==='tags'){const t=dbFileTags(f);return (t&&t.length)?t.join(',').toLowerCase():'~~~';}
+  if(field==='measStartDate'){const iso=dbFileMeasurementStartIso(f);if(!iso)return Infinity;const d=new Date(iso);return isNaN(d.getTime())?Infinity:new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();}
   return '';
 }
 function initDbTreeOrderUi(){
-  const labelMap={sample:'Sample',measStart:'Meas. start',temp:'Temperature',filename:'Filename',tags:'Tags',capillary:'Capillary',measEnd:'Meas. end',measTime:'Meas. time',date:'Date'};
+  const labelMap={sample:'Sample',measStartDate:'Meas. start date',measStart:'Meas. start',temp:'Temperature',filename:'Filename',tags:'Tags',capillary:'Capillary',measEnd:'Meas. end',measTime:'Meas. time',date:'Date'};
   const ids=['dbTreeLevel1','dbTreeLevel2','dbTreeLevel3','dbTreeLevel4','dbTreeLevel5','dbTreeLevel6','dbTreeLevel7'];
   ids.forEach((id,idx)=>{
     const el=document.getElementById(id);
@@ -4009,7 +4032,7 @@ async function ensureDbFileLoaded(id){
 }
 function ensureBasketRoot(){
   let root=basketRootId?combineList.find(c=>c.id===basketRootId):null;
-  if(!root){root={id:newSampleUid(),name:'第一バスケット',parentId:null,traces:[],chartSettings:readCombineChartSettingsFromDom()};combineList.push(root);basketRootId=root.id;}
+  if(!root){root={id:newSampleUid(),name:'First basket',parentId:null,traces:[],chartSettings:readCombineChartSettingsFromDom()};combineList.push(root);basketRootId=root.id;}
   return root;
 }
 function syncBasketRootTraces(){
@@ -4017,10 +4040,26 @@ function syncBasketRootTraces(){
   root.traces=basketIncludedIds().map(id=>{const s=samples.find(x=>x.dbId===id);if(!s)return null;return{sampleUid:s.sampleUid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0};}).filter(Boolean);
   return root;
 }
+// Remove samples (and their pattern traces) that came from the basket but are
+// no longer in it, so old basket data does not linger in samples or Patterns.
+function pruneOrphanBasketSamples(){
+  const keep=new Set(firstBasket);
+  const removed=new Set();
+  samples=samples.filter(s=>{
+    if(s.dbId!=null&&!keep.has(s.dbId)){removed.add(s.sampleUid);return false;}
+    return true;
+  });
+  if(removed.size){
+    combineList.forEach(c=>{if(Array.isArray(c.traces))c.traces=c.traces.filter(t=>!removed.has(t.sampleUid));});
+    samples.forEach((s,i)=>s.color=COLORS[i%COLORS.length]);
+  }
+  return removed.size;
+}
 async function plotFirstBasket(){
   const ids=basketIncludedIds();
   if(!ids.length){toast('Basket is empty or all excluded');return;}
   for(const id of ids){await ensureDbFileLoaded(id);}
+  pruneOrphanBasketSamples();
   const root=syncBasketRootTraces();
   activeCombineId=root.id;
   basketPlotted=true;
@@ -4030,6 +4069,7 @@ async function plotFirstBasket(){
 }
 async function syncBasketPlot(){
   for(const id of basketIncludedIds())await ensureDbFileLoaded(id);
+  pruneOrphanBasketSamples();
   syncBasketRootTraces();
   if(activeCombineId===basketRootId)renderAll();
   redrawBasketParentPlot();
@@ -4341,6 +4381,7 @@ document.getElementById('dbIn').addEventListener('change',e=>{const f=e.target.f
   setTheme(savedTheme==='dark'?'dark':'light');
   initDbPanelLayout();
   initDockResizer();
+  initDockColumns();
   initListDnd();
   if(typeof indexedDB==='undefined')toast('IndexedDB not available — DB cache disabled (private mode, etc.).');
   try{syncXrdChartHeight();syncOuterChartHeight();const src=document.getElementById('xrdSourceMode');if(src)src.value=xrdSourceMode;updateXaxisModeUi();updateCombineXaxisModeUi();updateXrdModeButtons();updateCombineModeButtons();}catch(e){console.error(e);}
