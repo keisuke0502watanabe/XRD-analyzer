@@ -1643,16 +1643,25 @@ function parseRas(text,fname){
   }
   if(!tth.length)return null;
   if(tempEnd==null&&tempStart!=null)tempEnd=tempStart;
+  if(tempStart==null&&tempEnd!=null)tempStart=tempEnd;
+  /* Representative temperature read from inside the .ras = average of
+     ATMOSPHERE_TEMP_START / _END; raw values kept in meta for reference. */
+  const atmTempStart=tempStart,atmTempEnd=tempEnd;
+  const tempRep=(tempStart!=null&&tempEnd!=null)?(tempStart+tempEnd)/2:(tempStart!=null?tempStart:tempEnd);
   const meta={
     timeStart,timeEnd,lambda,
-    tempStart,tempEnd,tempSetPoint:tempStart,
+    tempStart:tempRep,tempEnd:tempRep,tempSetPoint:tempRep,
+    atmTempStart,atmTempEnd,
     voltage,current,waveType,
     scanSpeed,scanSpeedUnit,scanStep,scanStart,scanStop,scanMode,scanAxis,
     goniometerName,attachmentName,counterName,sampleHolder,
     fileOperator,fileSample,fileComment,fileMemo,
     instrument:'Rigaku SmartLab'
   };
-  return _buildSample(fname.replace(/\.ras$/i,''),fname,tth,intensity,meta);
+  const s=_buildSample(fname.replace(/\.ras$/i,''),fname,tth,intensity,meta);
+  if(atmTempStart!=null)s.meta.atmTempStart=atmTempStart;
+  if(atmTempEnd!=null)s.meta.atmTempEnd=atmTempEnd;
+  return s;
 }
 
 /** PowDLL / generic 2-column text .scn — data only */
@@ -2030,13 +2039,17 @@ function handleFiles(fileList){
             assignNewSampleDisplayOrder(p);
             samples.push(p);
             /* HDF5: store as base64 for DB cache; text formats store rawText */
+            /* Temperature for the DB cache: prefer the value parsed from inside
+               the file (e.g. .ras atmosphere temp), fall back to the filename. */
+            const tempCForDb=Number.isFinite(p.tempSetPoint)?p.tempSetPoint
+              :(Number.isFinite(p.tempStart)?p.tempStart:parseTempFromFilename(f.name));
             let dbPayload;
             if(isHDF5){
               const bytes=new Uint8Array(raw);
               let b='';for(let i=0;i<bytes.length;i++)b+=String.fromCharCode(bytes[i]);
-              dbPayload={name:f.name,rawText:'__HDF5_BASE64__'+btoa(b),rowCount:p.tth.length,folderPath:'',tempC:parseTempFromFilename(f.name),sampleLabel:'',tags:[],capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null};
+              dbPayload={name:f.name,rawText:'__HDF5_BASE64__'+btoa(b),rowCount:p.tth.length,folderPath:'',tempC:tempCForDb,sampleLabel:'',tags:[],capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null};
             }else{
-              dbPayload={name:f.name,rawText:raw,rowCount:p.tth.length,folderPath:'',tempC:parseTempFromFilename(f.name),sampleLabel:'',tags:[],capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null};
+              dbPayload={name:f.name,rawText:raw,rowCount:p.tth.length,folderPath:'',tempC:tempCForDb,sampleLabel:'',tags:[],capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null};
             }
             try{await adapter.saveFile(dbPayload);}catch(err){console.error(err);toast('DB save: '+(err.message||err));}
           }
