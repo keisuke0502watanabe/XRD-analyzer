@@ -1062,7 +1062,11 @@ function thermalUiTempStr(s){
 function parseTempFromFilename(fname){
   if(!fname)return null;
   const m=String(fname).match(/([+-]?\d+(?:\.\d+)?)\s*°?\s*C(?=\.|_|$|\s|#)/i);
-  return m&&Number.isFinite(parseFloat(m[1]))?parseFloat(m[1]):null;
+  if(m&&Number.isFinite(parseFloat(m[1])))return parseFloat(m[1]);
+  /* Room-temperature tokens (e.g. Troom / RT / room) → 25 °C.
+     Anton Paar HDF5 stores no temperature inside the file, only in the name. */
+  if(/(?:^|[_\-\s#])(?:t?room|rt)(?=[._\-\s#]|$)/i.test(String(fname)))return 25;
+  return null;
 }
 function resolveSampleTemps(fname,opts={}){
   let tempSetPoint=Number.isFinite(opts.tempSetPoint)?opts.tempSetPoint:null;

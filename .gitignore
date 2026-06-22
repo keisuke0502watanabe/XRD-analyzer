@@ -6,3 +6,6 @@ gh.tar.gz
 
 # Local tooling / machine-specific config
 .claude/
+
+# local sample data (not committed)
+_samples/
