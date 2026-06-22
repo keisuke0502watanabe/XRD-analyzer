@@ -322,7 +322,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
   <div class="main">
     <div id="appNotice" class="app-notice" role="status" aria-live="polite"></div>
     <div class="topbar">
-      <span class="brand">XRD Analyzer DB TH v14</span>
+      <span class="brand">XRD Analyzer DB TH v15</span>
       <label class="db-dock-layout" style="margin-right:4px">DB panel<select class="dbPanelLayoutSelect" onchange="setDbPanelLayout(this.value)"><option value="sidebar">Sidebar</option><option value="top">Top</option></select></label>
       <div class="sep"></div>
       <button class="btn" onclick="document.getElementById('fileIn').click()">Load Files</button>
@@ -418,6 +418,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             </div>
             <div id="combineSamplePicker" style="max-height:min(200px,26vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:4px 6px;margin-bottom:6px;font-size:11px"></div>
             <div class="title" style="margin-bottom:4px">Trace settings</div>
+            <div class="avg-pattern-row" id="avgPatternUi"></div>
             <div class="seg-list" id="outerSegList"></div>
           </div>
           <div class="combine-chart-area">
@@ -1368,6 +1369,13 @@ function createAveragedPattern(){
   ensureSampleThermal(p);
   assignNewSampleDisplayOrder(p);
   samples.push(p);
+  /* Add the averaged pattern to the active view so it plots immediately */
+  const cmb=getActiveCombine();
+  if(cmb){
+    if(!Array.isArray(cmb.traces))cmb.traces=[];
+    cmb.traces.push({sampleUid:p.sampleUid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0});
+  }
+  avgSelectUids.clear();
   renderAvgPatternUi();
   renderAll();
   toast(`Created averaged pattern: ${name} (${grid.length} pts, n=${selected.length})`);
@@ -1375,14 +1383,17 @@ function createAveragedPattern(){
 function toggleAvgSelect(uid,checked){
   if(checked)avgSelectUids.add(uid);else avgSelectUids.delete(uid);
   renderAvgPatternUi();
+  renderOuterSegmentList();
 }
 function clearAvgSelect(){
   avgSelectUids.clear();
   renderAvgPatternUi();
-  renderXrdTraceList();
+  renderOuterSegmentList();
 }
 function pruneAvgSelect(){
-  const uids=new Set(samples.map(s=>s.sampleUid));
+  /* Scope average selection to traces in the active pattern */
+  const cmb=getActiveCombine();
+  const uids=new Set((cmb&&Array.isArray(cmb.traces))?cmb.traces.map(t=>t.sampleUid):[]);
   [...avgSelectUids].forEach(id=>{if(!uids.has(id))avgSelectUids.delete(id);});
 }
 function renderAvgPatternUi(){
@@ -1398,7 +1409,7 @@ function renderAvgPatternUi(){
     <label>Grid step (2θ)<input class="num" id="avgGridStep" type="number" step="0.001" min="0.0001" placeholder="auto" title="Leave empty for finest step among selected" value="${esc(stepKeep)}"></label>
     <button type="button" class="btn green" onclick="createAveragedPattern()" ${n<2?'disabled':''}>Create average</button>
     <button type="button" class="btn" onclick="clearAvgSelect()" ${n?'':'disabled'}>Clear selection</button>
-    <span style="font-size:10px;color:var(--text3)">Check Avg on traces → sum &amp; average on overlap (uses X min/max)</span>`;
+    <span style="font-size:10px;color:var(--text3)">Check Avg on traces below → averages on overlapping 2θ; result is added as a new [avg] pattern</span>`;
 }
 function defaultFileLegend(s){
   if(!s)return'';
@@ -2940,6 +2951,7 @@ function renderOuterSegmentList(){
               <button type="button" class="btn" style="padding:1px 5px;font-size:10px" onclick="moveCombineTrace(${ti},1)">↓</button>
             </div>
           </div>
+          <label class="file-row-field avg-chk" title="Include in average">Avg<input type="checkbox" ${avgSelectUids.has(s.sampleUid)?'checked':''} onchange="toggleAvgSelect('${esc(s.sampleUid)}',this.checked)"></label>
           <label>Legend<input class="txt-sm num-wide" type="text" value="${esc(leg)}" placeholder="${esc(defLeg)}" onchange="setCombineTraceProp(${ti},'legendLabel',this.value)"></label>
           ${xrdLegendPosition==='beside'?`<label>Leg ΔY px<input class="num num-wide" type="number" step="1" value="${seg.legendBesideYAdjPx||0}" oninput="setCombineTraceProp(${ti},'legendBesideYAdjPx',+this.value)"></label>`:''}
           <label>Color<input type="color" value="${esc(col)}" oninput="setCombineTraceProp(${ti},'color',this.value)"></label>
