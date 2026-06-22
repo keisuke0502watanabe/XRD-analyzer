@@ -105,6 +105,10 @@ body.theme-dark .app-notice{background:#352a12;border-color:#8a7020;color:#f2e6c
 .db-list.db-list--scroll{min-height:72px;max-height:min(280px,40vh)}
 .db-folder{margin-bottom:10px}
 .db-folder>.title{font-size:10px;color:var(--text3);text-transform:none;letter-spacing:0;padding:.2rem .35rem .35rem}
+.db-folder-head{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2);padding:.25rem .4rem;cursor:pointer;user-select:none;text-transform:none;letter-spacing:0;border-radius:4px}
+.db-folder-head:hover{background:var(--bg3)}
+.db-folder-label{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.db-folder-count{margin-left:auto;color:var(--text3)}
 .db-item{padding:.45rem .65rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px}
 .db-item:hover{background:var(--bg3)}
 .db-item-actions{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
@@ -684,6 +688,7 @@ let dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',dateFrom:'',dateTo:'',so
 const DB_TREE_FIELDS=['sample','measStartDate','measStart','temp','filename','tags','capillary','measEnd','measTime','date'];
 let dbTreeOrder=['sample','measStart','temp','filename','tags','capillary','measEnd'];
 let dbTreeCollapsed={};
+let dbFolderCollapsed={};
 let uiTheme='light';
 let basketSearch='';
 let basketSelectedOnly=false;
@@ -957,19 +962,40 @@ function groupDbRecordsByFolder(records,folderKey='folderPath'){
   });
   return keys.map(k=>({folderKey:k,label:k?k:'(root)',items:(m.get(k)||[]).slice().sort((a,b)=>String(a&&a.name||'').localeCompare(String(b&&b.name||''),undefined,{numeric:true,sensitivity:'base'}))}));
 }
-function renderDbFolderGroups(groups,renderItem){
+/** Folder groups in Projects/Series default collapsed; remember per-panel toggles. */
+function isDbFolderCollapsed(panelKey,folderKey){
+  const k=panelKey+'::'+folderKey;
+  if(k in dbFolderCollapsed)return !!dbFolderCollapsed[k];
+  return true;
+}
+function toggleDbFolder(panelKey,encKey){
+  const folderKey=decodeURIComponent(encKey);
+  const k=panelKey+'::'+folderKey;
+  dbFolderCollapsed[k]=!isDbFolderCollapsed(panelKey,folderKey);
+  if(panelKey==='proj')renderDbProjectsList();
+  else if(panelKey==='series')renderDbSeriesList();
+}
+function renderDbFolderGroups(groups,renderItem,panelKey){
   if(!Array.isArray(groups)||!groups.length)return'';
   return groups.map(g=>{
     const items=Array.isArray(g.items)?g.items:[];
-    return`<div class="db-folder"><div class="title">${esc(g.label||'(root)')}</div>${items.map(renderItem).join('')}</div>`;
+    const folderKey=g.folderKey||'';
+    const collapsed=panelKey?isDbFolderCollapsed(panelKey,folderKey):false;
+    const tri=collapsed?'▸':'▾';
+    const enc=encodeURIComponent(folderKey);
+    const head=panelKey
+      ?`<div class="db-folder-head" onclick="toggleDbFolder('${panelKey}','${enc}')"><span class="db-tree-tri">${tri}</span><span class="db-folder-label">${esc(g.label||'(root)')}</span><span class="db-folder-count">${items.length}</span></div>`
+      :`<div class="title">${esc(g.label||'(root)')}</div>`;
+    const body=`<div class="db-folder-body"${collapsed?' hidden':''}>${items.map(renderItem).join('')}</div>`;
+    return`<div class="db-folder">${head}${body}</div>`;
   }).join('');
 }
 /** If folder grouping fails, show a flat list so the sidebar never goes blank. */
-function renderDbListOrFlat(records,renderItem){
+function renderDbListOrFlat(records,renderItem,panelKey){
   try{
     if(!Array.isArray(records)||!records.length)return'';
     const g=groupDbRecordsByFolder(records);
-    const html=renderDbFolderGroups(g,renderItem);
+    const html=renderDbFolderGroups(g,renderItem,panelKey);
     if(html&&html.trim())return html;
   }catch(e){console.error('renderDbListOrFlat',e);}
   return records.filter(Boolean).map(renderItem).join('');
@@ -2299,7 +2325,7 @@ function buildXrdTraceTree(items,level,path){
     const nodeKey=`${path}/${field}:${k}`;
     const nodeArg=encodeURIComponent(nodeKey);
     xrdTraceTreeGroups[nodeKey]=groupItems.map(s=>s.sampleUid);
-    const collapsed=!!dbTreeCollapsed[nodeKey];
+    const collapsed=isDbTreeCollapsed(nodeKey);
     const tri=collapsed?'▸':'▾';
     const allChecked=groupItems.every(s=>!xrdHiddenByKey.get(xrdKey(s)));
     const checked=(nodeKey in xrdTraceTreeNodeChecks)?!!xrdTraceTreeNodeChecks[nodeKey]:allChecked;
@@ -3763,8 +3789,13 @@ function applyDbTreeOrder(){
   initDbTreeOrderUi();
   renderDbFileList();
 }
+/** DB File Cache tree (key prefix "root") defaults collapsed; other trees default open. */
+function isDbTreeCollapsed(key){
+  if(key in dbTreeCollapsed)return !!dbTreeCollapsed[key];
+  return String(key).startsWith('root');
+}
 function toggleDbTreeNode(key){
-  dbTreeCollapsed[key]=!dbTreeCollapsed[key];
+  dbTreeCollapsed[key]=!isDbTreeCollapsed(key);
   renderDbFileList();
 }
 function renderDbFileItem(f){
@@ -3874,7 +3905,7 @@ function buildDbTreeNode(items,level,path){
     const groupItems=m.get(k)||[];
     const nodeKey=`${path}/${field}:${k}`;
     const nodeArg=encodeURIComponent(nodeKey);
-    const collapsed=!!dbTreeCollapsed[nodeKey];
+    const collapsed=isDbTreeCollapsed(nodeKey);
     const tri=collapsed?'▸':'▾';
     const encodedGroupIds=encodeURIComponent(JSON.stringify(groupItems.map(f=>f.id)));
     const groupState=groupBasketState(groupItems.map(f=>f.id));
@@ -3941,9 +3972,6 @@ function fmtDbSavedAt(s){
   return isNaN(d.getTime())?'':d.toLocaleString();
 }
 async function refreshDbPanels(){
-  const emptyF='<div class="empty">No files in cache</div>';
-  const emptyP='<div class="empty">No saved projects</div>';
-  const emptyT='<div class="empty">No saved series</div>';
   try{
     dbFiles=await adapter.listFiles().catch(()=>[]);
     dbProjects=await adapter.listProjects().catch(()=>[]);
@@ -3964,18 +3992,26 @@ async function refreshDbPanels(){
   firstBasketExcluded.forEach(id=>{if(!firstBasket.includes(id))firstBasketExcluded.delete(id);});
   renderDbFileList();
   renderFirstBasket();
+  renderDbProjectsList();
+  renderDbSeriesList();
+}
+function renderDbProjectsList(){
   const pl=document.getElementById('dbProjectList');
+  if(!pl)return;
   const renderProj=p=>{
     const pid=p.id;
     return`<div class="db-item" onclick="loadProjectFromDb(${pid})"><div style="flex:1;min-width:0"><div>${esc(p.name||'(no name)')}</div><div class="db-meta">${fmtDbSavedAt(p.savedAt)}</div></div><div class="db-item-actions"><button type="button" class="btn" onclick="event.stopPropagation();openProjectMetaModal(${pid})">Edit</button><button type="button" class="btn warn" onclick="event.stopPropagation();deleteDbProject(${pid})">x</button></div></div>`;
   };
-  pl.innerHTML=dbProjects.length?renderDbListOrFlat(dbProjects,renderProj):emptyP;
+  pl.innerHTML=dbProjects.length?renderDbListOrFlat(dbProjects,renderProj,'proj'):'<div class="empty">No saved projects</div>';
+}
+function renderDbSeriesList(){
   const tsl=document.getElementById('dbThermalSeriesList');
+  if(!tsl)return;
   const renderTs=t=>{
     const tid=t.id;
     return`<div class="db-item" onclick="loadThermalSeriesFromDb(${tid})"><div style="flex:1;min-width:0"><div>${esc(t.name||'Series')}</div><div class="db-meta">${t.memberUids?t.memberUids.length:0} samples</div></div><div class="db-item-actions"><button type="button" class="btn" onclick="event.stopPropagation();openSeriesMetaModal(${tid})">Edit</button><button type="button" class="btn warn" onclick="event.stopPropagation();deleteThermalSeriesFromDb(${tid},event)">x</button></div></div>`;
   };
-  if(tsl)tsl.innerHTML=dbThermalSeries.length?renderDbListOrFlat(dbThermalSeries,renderTs):emptyT;
+  tsl.innerHTML=dbThermalSeries.length?renderDbListOrFlat(dbThermalSeries,renderTs,'series'):'<div class="empty">No saved series</div>';
 }
 async function openProjectMetaModal(id){
   try{
