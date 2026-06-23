@@ -1,8 +1,8 @@
 # IndexedDB Structure (`xrd_analyzer_db_th`)
 
-Current app reference: `xrd_analyzer_db_TH_v5.html`  
+Current app reference: `xrd_analyzer_db_TH_v15.html`  
 Database name: `xrd_analyzer_db_th`  
-Version: `3`
+Version: `4`
 
 ## Object Stores
 
@@ -59,6 +59,31 @@ Main fields:
 - `folderPath: string`
 - `memberUids: string[]`
 - `savedAt: string` (ISO datetime; auto-set on `saveThermalSeries`)
+
+### 4) `appState`
+- Key: `key` (string)
+- Small key/value store for app-level state that must survive in IndexedDB.
+
+Main fields:
+- `key: string`
+- `value: any`
+
+Current keys:
+- `autoBackupDir` — `FileSystemDirectoryHandle` for the auto-backup folder (Chrome/Edge).
+
+## Auto-backup to a local folder (`autoBackup`)
+
+Chrome/Edge only (File System Access API). Lets the cache survive a browser-cache wipe.
+
+- "Backup" button (next to DB Export/Import) calls `window.showDirectoryPicker` and stores the
+  `FileSystemDirectoryHandle` in `appState.autoBackupDir`.
+- On every DB mutation (`refreshDbPanels`) a debounced write pushes the full DB snapshot to the folder:
+  - `xrd_th_db_latest.json` — always overwritten with the current snapshot.
+  - `xrd_th_db_<YYYYMMDD>.json` — one rolling snapshot per day.
+- Snapshot payload is identical to `exportFullDb` (`buildDbExportPayload`), so the files restore via **DB Import**.
+- Empty-DB snapshots are skipped so an accidental `Clear` cannot overwrite good backups with an empty file.
+- The handle lives in IndexedDB; if the cache is wiped the handle is lost too, but the on-disk backups
+  remain — the user re-links the folder once (button shows `Backup: reconnect` when permission lapses).
 
 ## Related JSON Export/Import
 

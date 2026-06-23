@@ -91,6 +91,8 @@ body.theme-dark .app-notice{background:#352a12;border-color:#8a7020;color:#f2e6c
 .db-tree-order{display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:.3rem .65rem;border-bottom:1px solid var(--border);background:var(--bg2)}
 .db-tree-order label{font-size:10px;color:var(--text3);display:flex;gap:3px;align-items:center}
 .db-tree-order select{font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);max-width:88px}
+.db-tree-order .db-tree-lvl-btn{font-size:11px;line-height:1;padding:2px 7px;min-width:0}
+.db-tree-order .db-tree-lvl-btn:disabled{opacity:.4;cursor:default}
 .db-tree{padding:.2rem 0}
 .db-tree-node{margin-left:10px}
 .db-tree-head{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text2);padding:2px 6px;cursor:pointer;user-select:none}
@@ -111,6 +113,15 @@ body.theme-dark .app-notice{background:#352a12;border-color:#8a7020;color:#f2e6c
 .db-folder-count{margin-left:auto;color:var(--text3)}
 .db-item{padding:.45rem .65rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px}
 .db-item:hover{background:var(--bg3)}
+.db-item-tri{flex-shrink:0;width:12px;text-align:center;color:var(--text3);cursor:pointer;font-size:9px}
+.db-item-tri:hover{color:var(--text)}
+.db-item-detail{padding:.4rem .65rem .5rem 1.4rem;font-size:10px;color:var(--text2);background:var(--bg2);border-bottom:1px solid var(--border)}
+.db-detail-grid{display:grid;grid-template-columns:auto 1fr;gap:2px 8px}
+.db-detail-k{color:var(--text3)}
+.db-detail-v{color:var(--text);word-break:break-word}
+.db-detail-list{margin:4px 0 0;padding-left:16px;max-height:140px;overflow:auto}
+.db-detail-list li{line-height:1.4}
+.db-detail-empty{color:var(--text3);margin-top:4px}
 .db-bulk-chk{flex-shrink:0;cursor:pointer;accent-color:var(--warn,#d97706)}
 .bulk-field{display:flex;align-items:center;gap:6px;font-size:11px;margin-bottom:.4rem}
 .bulk-field>span{flex:0 0 96px;color:var(--text2)}
@@ -264,6 +275,10 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <button class="btn" onclick="document.getElementById('dbIn').click()">DB Import</button>
             <button class="btn" onclick="openDupFinder()" title="Find files with the same name and content, and delete extras">Find dupes</button>
           </div>
+          <div class="ctrl-row" style="margin-top:5px;gap:6px">
+            <button class="btn" id="autoBackupBtn" onclick="autoBackup.onClick()" title="Automatic backup to a local folder (Chrome/Edge)">Backup: off</button>
+            <button class="btn warn" id="autoBackupOffBtn" onclick="autoBackup.disable()" style="display:none" title="Turn off auto-backup">x</button>
+          </div>
           <div class="ctrl-row" id="dbBulkBar" style="margin-top:5px;align-items:center;gap:6px">
             <label class="db-bulk-all" title="Select / deselect all currently shown files"><input type="checkbox" id="dbBulkAllChk" onclick="toggleDbBulkAll(this.checked)">All shown</label>
             <span id="dbBulkCount" style="font-size:10px;color:var(--text3)">0 selected</span>
@@ -286,15 +301,11 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
           </select>
           <button class="db-filter-clear" onclick="clearDbFileFilter()" title="Clear filters">✕</button>
         </div>
-        <div class="db-tree-order">
+        <div class="db-tree-order" id="dbTreeOrderBar">
           <span style="font-size:10px;color:var(--text3)">Tree:</span>
-          <label>1<select id="dbTreeLevel1" onchange="applyDbTreeOrder()"></select></label>
-          <label>2<select id="dbTreeLevel2" onchange="applyDbTreeOrder()"></select></label>
-          <label>3<select id="dbTreeLevel3" onchange="applyDbTreeOrder()"></select></label>
-          <label>4<select id="dbTreeLevel4" onchange="applyDbTreeOrder()"></select></label>
-          <label>5<select id="dbTreeLevel5" onchange="applyDbTreeOrder()"></select></label>
-          <label>6<select id="dbTreeLevel6" onchange="applyDbTreeOrder()"></select></label>
-          <label>7<select id="dbTreeLevel7" onchange="applyDbTreeOrder()"></select></label>
+          <span id="dbTreeLevels" style="display:contents"></span>
+          <button class="btn db-tree-lvl-btn" id="dbTreeRemoveLevel" onclick="removeDbTreeLevel()" title="Remove the last grouping level">−</button>
+          <button class="btn db-tree-lvl-btn" id="dbTreeAddLevel" onclick="addDbTreeLevel()" title="Add a grouping level (max 5)">+</button>
         </div>
         <div id="dbFileList" class="db-list db-list--files"><div class="empty">No files in cache</div></div>
       </div>
@@ -717,9 +728,12 @@ const avgSelectUids=new Set();
 let dbFiles=[],dbProjects=[],dbThermalSeries=[],toastTimer=null;
 let dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',dateFrom:'',dateTo:'',sort:'name-asc'};
 const DB_TREE_FIELDS=['sample','measStartDate','measStart','temp','filename','tags','capillary','measEnd','measTime','date'];
-let dbTreeOrder=['sample','measStart','temp','filename','tags','capillary','measEnd'];
+let dbTreeOrder=['sample','measStart','temp'];
+const DB_TREE_MAX_LEVELS=5;
+const DB_TREE_MIN_LEVELS=1;
 let dbTreeCollapsed={};
 let dbFolderCollapsed={};
+let dbItemExpanded={};
 const dbBulkSel=new Set();
 let dbBulkShownIds=[];
 let uiTheme='light';
@@ -742,7 +756,7 @@ let seriesEditorTargetId=null;
 let seriesDraftOrder=[];
 
 const DB_NAME='xrd_analyzer_db_th';
-const DB_VERSION=3;
+const DB_VERSION=4;
 
 class IndexedDBAdapter{
   constructor(){this.db=null;}
@@ -755,6 +769,7 @@ class IndexedDBAdapter{
         if(!db.objectStoreNames.contains('files'))db.createObjectStore('files',{keyPath:'id',autoIncrement:true});
         if(!db.objectStoreNames.contains('projects'))db.createObjectStore('projects',{keyPath:'id',autoIncrement:true});
         if(!db.objectStoreNames.contains('thermalSeries'))db.createObjectStore('thermalSeries',{keyPath:'id',autoIncrement:true});
+        if(!db.objectStoreNames.contains('appState'))db.createObjectStore('appState',{keyPath:'key'});
       };
       req.onsuccess=e=>{this.db=e.target.result;res(this.db);};
       req.onerror=e=>rej(e.target.error);
@@ -819,6 +834,9 @@ class IndexedDBAdapter{
   saveThermalSeries(o){return this.tx('thermalSeries','readwrite',st=>st.put({...o,savedAt:new Date().toISOString()}));}
   deleteThermalSeries(id){return this.tx('thermalSeries','readwrite',st=>st.delete(id));}
   clearThermalSeries(){return this.tx('thermalSeries','readwrite',st=>st.clear());}
+  getState(key){return this.tx('appState','readonly',st=>st.get(key));}
+  setState(key,value){return this.tx('appState','readwrite',st=>st.put({key,value}));}
+  deleteState(key){return this.tx('appState','readwrite',st=>st.delete(key));}
 }
 const adapter=new IndexedDBAdapter();
 
@@ -1023,12 +1041,88 @@ function renderDbFolderGroups(groups,renderItem,panelKey){
     return`<div class="db-folder">${head}${body}</div>`;
   }).join('');
 }
-/** If folder grouping fails, show a flat list so the sidebar never goes blank. */
+/* ---- Per-item detail accordion (Projects / Series) ---- */
+function isDbItemExpanded(panelKey,id){return !!dbItemExpanded[panelKey+'::'+id];}
+function toggleDbItemDetail(panelKey,id){
+  const k=panelKey+'::'+id;
+  dbItemExpanded[k]=!dbItemExpanded[k];
+  if(panelKey==='proj')renderDbProjectsList();
+  else if(panelKey==='series')renderDbSeriesList();
+}
+function projectDetailHtml(p){
+  const folder=normalizeFolderPath(p.folderPath)||'(root)';
+  const tags=(Array.isArray(p.tags)&&p.tags.length)?p.tags.join(', '):'—';
+  const pl=p.payload||{};
+  const samples=Array.isArray(pl.samples)?pl.samples:[];
+  const seriesN=Array.isArray(pl.thermalSeriesList)?pl.thermalSeriesList.length:0;
+  const patternsN=Array.isArray(pl.combineList)?pl.combineList.length:0;
+  const names=samples.map(s=>esc(String((s&&(s.name||s.sampleLabel||s.sampleUid))||'(sample)')));
+  const list=names.length?`<ul class="db-detail-list">${names.map(n=>`<li>${n}</li>`).join('')}</ul>`:'<div class="db-detail-empty">— no sample data in payload —</div>';
+  return`<div class="db-detail-grid">
+    <span class="db-detail-k">Folder</span><span class="db-detail-v">${esc(folder)}</span>
+    <span class="db-detail-k">Tags</span><span class="db-detail-v">${esc(tags)}</span>
+    <span class="db-detail-k">Saved</span><span class="db-detail-v">${esc(fmtDbSavedAt(p.savedAt))}</span>
+    <span class="db-detail-k">Samples</span><span class="db-detail-v">${samples.length}</span>
+    <span class="db-detail-k">Series</span><span class="db-detail-v">${seriesN}</span>
+    <span class="db-detail-k">Patterns</span><span class="db-detail-v">${patternsN}</span>
+  </div>${list}`;
+}
+function seriesDetailHtml(t){
+  const folder=normalizeFolderPath(t.folderPath)||'(root)';
+  const uids=Array.isArray(t.memberUids)?t.memberUids:[];
+  return`<div class="db-detail-grid">
+    <span class="db-detail-k">Folder</span><span class="db-detail-v">${esc(folder)}</span>
+    <span class="db-detail-k">Saved</span><span class="db-detail-v">${esc(fmtDbSavedAt(t.savedAt))}</span>
+    <span class="db-detail-k">Members</span><span class="db-detail-v">${uids.length}</span>
+  </div>`;
+}
+/** Build a nested folder tree from records whose folderPath is like "Lab/2025/Q1". */
+function buildDbFolderTree(records,folderKey='folderPath'){
+  const root={name:'',path:'',children:new Map(),items:[]};
+  for(const r of records){
+    if(!r||typeof r!=='object')continue;
+    const fp=normalizeFolderPath(r[folderKey]);
+    const parts=fp?String(fp).split('/').map(s=>s.trim()).filter(Boolean):[];
+    let node=root;
+    for(const part of parts){
+      if(!node.children.has(part))node.children.set(part,{name:part,path:node.path?node.path+'/'+part:part,children:new Map(),items:[]});
+      node=node.children.get(part);
+    }
+    node.items.push(r);
+  }
+  return root;
+}
+function countDbFolderItems(node){let n=node.items.length;node.children.forEach(c=>{n+=countDbFolderItems(c);});return n;}
+function sortDbItemsByName(items){return(items||[]).slice().sort((a,b)=>String(a&&a.name||'').localeCompare(String(b&&b.name||''),undefined,{numeric:true,sensitivity:'base'}));}
+/** Recursively render nested folders; each level is its own accordion (default collapsed). */
+function renderDbFolderTreeNodes(node,renderItem,panelKey,depth){
+  const keys=[...node.children.keys()].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+  const pad=6+depth*14;
+  return keys.map(key=>{
+    const child=node.children.get(key);
+    const folderKey=child.path;
+    const collapsed=isDbFolderCollapsed(panelKey,folderKey);
+    const tri=collapsed?'▸':'▾';
+    const enc=encodeURIComponent(folderKey);
+    const count=countDbFolderItems(child);
+    const head=`<div class="db-folder-head" style="padding-left:${pad}px" onclick="toggleDbFolder('${panelKey}','${enc}')"><span class="db-tree-tri">${tri}</span><span class="db-folder-label">${esc(child.name||'(folder)')}</span><span class="db-folder-count">${count}</span></div>`;
+    let inner='';
+    if(!collapsed){
+      const sub=renderDbFolderTreeNodes(child,renderItem,panelKey,depth+1);
+      const items=sortDbItemsByName(child.items).map(r=>`<div class="db-folder-item-wrap" style="padding-left:${pad+14}px">${renderItem(r)}</div>`).join('');
+      inner=sub+items;
+    }
+    return`<div class="db-folder">${head}<div class="db-folder-body"${collapsed?' hidden':''}>${inner}</div></div>`;
+  }).join('');
+}
+/** Nested folder tree for Projects/Series; falls back to a flat list so the sidebar never goes blank. */
 function renderDbListOrFlat(records,renderItem,panelKey){
   try{
     if(!Array.isArray(records)||!records.length)return'';
-    const g=groupDbRecordsByFolder(records);
-    const html=renderDbFolderGroups(g,renderItem,panelKey);
+    const root=buildDbFolderTree(records);
+    const rootItems=sortDbItemsByName(root.items).map(renderItem).join('');
+    const folders=renderDbFolderTreeNodes(root,renderItem,panelKey,0);
+    const html=rootItems+folders;
     if(html&&html.trim())return html;
   }catch(e){console.error('renderDbListOrFlat',e);}
   return records.filter(Boolean).map(renderItem).join('');
@@ -1442,6 +1536,14 @@ function createAveragedPattern(){
   renderAvgPatternUi();
   renderAll();
   toast(`Created averaged pattern: ${name} (${grid.length} pts, n=${selected.length})`);
+  /* Persist the averaged pattern to the DB File Cache so it survives reload like a loaded file. */
+  try{
+    const rec=buildProjectCacheRecordFromSample(p);
+    if(rec){
+      rec.tags=normalizeTags([...(rec.tags||[]),'avg']);
+      adapter.saveFile(rec).then(()=>refreshDbPanels()).catch(err=>{console.error(err);toast('DB cache save failed: '+(err.message||err));});
+    }
+  }catch(err){console.error(err);}
 }
 function toggleAvgSelect(uid,checked){
   if(checked)avgSelectUids.add(uid);else avgSelectUids.delete(uid);
@@ -3148,7 +3250,23 @@ function renderSeriesEditorMemberList(){
     const fn=defaultFileLegend(s);
     return`<div class="ctrl-row" style="margin:3px 0;align-items:flex-start"><label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;flex:1;min-width:0"><input type="checkbox" ${on?'checked':''} onchange="toggleSeriesDraftMemberByIdx(${si},this.checked)" style="margin-top:2px"><span style="word-break:break-all;min-width:0">${esc(fn)}</span></label></div>`;
   }).join('');
-  el.innerHTML=orderHtml+'<div style="margin-top:.75rem;font-size:11px;color:var(--text3)">Include samples</div>'+pick;
+  const total=samples.length;
+  const selCount=samples.filter(s=>s&&seriesDraftOrder.includes(s.sampleUid)).length;
+  const allOn=total>0&&selCount===total;
+  const includeHeader=`<div style="margin-top:.75rem;font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px">`
+    +`<label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="seriesDraftAllChk" ${allOn?'checked':''} ${total?'':'disabled'} onchange="toggleSeriesDraftAll(this.checked)">All</label>`
+    +`<span>Include samples</span><span style="margin-left:auto">${selCount}/${total}</span></div>`;
+  el.innerHTML=orderHtml+includeHeader+pick;
+  const allChk=document.getElementById('seriesDraftAllChk');
+  if(allChk)allChk.indeterminate=selCount>0&&selCount<total;
+}
+function toggleSeriesDraftAll(on){
+  if(on){
+    samples.forEach(s=>{if(s&&s.sampleUid&&!seriesDraftOrder.includes(s.sampleUid))seriesDraftOrder.push(s.sampleUid);});
+  }else{
+    seriesDraftOrder=[];
+  }
+  renderSeriesEditorMemberList();
 }
 function toggleSeriesDraftMemberByIdx(sampleIdx,on){
   const s=samples[sampleIdx];
@@ -3820,24 +3938,44 @@ function dbTreeSortValue(field,f){
   if(field==='measStartDate'){const iso=dbFileMeasurementStartIso(f);if(!iso)return Infinity;const d=new Date(iso);return isNaN(d.getTime())?Infinity:new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();}
   return '';
 }
+const DB_TREE_LABELS={sample:'Sample',measStartDate:'Meas. start date',measStart:'Meas. start',temp:'Temperature',filename:'Filename',tags:'Tags',capillary:'Capillary',measEnd:'Meas. end',measTime:'Meas. time',date:'Date'};
+/** Render one <select> per active grouping level (default 3; add/remove up to DB_TREE_MAX_LEVELS). */
 function initDbTreeOrderUi(){
-  const labelMap={sample:'Sample',measStartDate:'Meas. start date',measStart:'Meas. start',temp:'Temperature',filename:'Filename',tags:'Tags',capillary:'Capillary',measEnd:'Meas. end',measTime:'Meas. time',date:'Date'};
-  const ids=['dbTreeLevel1','dbTreeLevel2','dbTreeLevel3','dbTreeLevel4','dbTreeLevel5','dbTreeLevel6','dbTreeLevel7'];
-  ids.forEach((id,idx)=>{
-    const el=document.getElementById(id);
-    if(!el)return;
-    el.innerHTML=DB_TREE_FIELDS.map(v=>`<option value="${v}">${labelMap[v]}</option>`).join('');
-    el.value=dbTreeOrder[idx]||DB_TREE_FIELDS[idx];
-  });
+  const host=document.getElementById('dbTreeLevels');
+  if(!host)return;
+  const opts=DB_TREE_FIELDS.map(v=>`<option value="${v}">${DB_TREE_LABELS[v]||v}</option>`).join('');
+  host.innerHTML=dbTreeOrder.map((_field,idx)=>`<label>${idx+1}<select id="dbTreeLevel${idx+1}" onchange="applyDbTreeOrder()">${opts}</select></label>`).join('');
+  dbTreeOrder.forEach((field,idx)=>{const el=document.getElementById('dbTreeLevel'+(idx+1));if(el)el.value=field;});
+  const addBtn=document.getElementById('dbTreeAddLevel');
+  const remBtn=document.getElementById('dbTreeRemoveLevel');
+  if(addBtn)addBtn.disabled=dbTreeOrder.length>=DB_TREE_MAX_LEVELS;
+  if(remBtn)remBtn.disabled=dbTreeOrder.length<=DB_TREE_MIN_LEVELS;
+}
+function refreshTreesAfterOrderChange(){
+  renderDbFileList();
+  if(typeof renderXrdTraceList==='function'){try{renderXrdTraceList();}catch(_e){}}
 }
 function applyDbTreeOrder(){
-  const ids=['dbTreeLevel1','dbTreeLevel2','dbTreeLevel3','dbTreeLevel4','dbTreeLevel5','dbTreeLevel6','dbTreeLevel7'];
-  const picked=ids.map(id=>document.getElementById(id)?.value).filter(Boolean);
-  const uniq=[];picked.forEach(v=>{if(!uniq.includes(v))uniq.push(v);});
-  DB_TREE_FIELDS.forEach(v=>{if(!uniq.includes(v))uniq.push(v);});
-  dbTreeOrder=uniq.slice(0,DB_TREE_FIELDS.length);
+  const picked=dbTreeOrder.map((_f,idx)=>document.getElementById('dbTreeLevel'+(idx+1))?.value).filter(Boolean);
+  dbTreeOrder=picked.length?picked:['sample'];
+  refreshTreesAfterOrderChange();
+}
+/** Pick a sensible default for a newly-added level: first field not already used. */
+function nextDbTreeField(){
+  const used=new Set(dbTreeOrder);
+  return DB_TREE_FIELDS.find(v=>!used.has(v))||DB_TREE_FIELDS[0];
+}
+function addDbTreeLevel(){
+  if(dbTreeOrder.length>=DB_TREE_MAX_LEVELS)return;
+  dbTreeOrder=[...dbTreeOrder,nextDbTreeField()];
   initDbTreeOrderUi();
-  renderDbFileList();
+  refreshTreesAfterOrderChange();
+}
+function removeDbTreeLevel(){
+  if(dbTreeOrder.length<=DB_TREE_MIN_LEVELS)return;
+  dbTreeOrder=dbTreeOrder.slice(0,-1);
+  initDbTreeOrderUi();
+  refreshTreesAfterOrderChange();
 }
 /** DB File Cache tree (key prefix "root") defaults collapsed; other trees default open. */
 function isDbTreeCollapsed(key){
@@ -4080,13 +4218,16 @@ async function refreshDbPanels(){
   renderFirstBasket();
   renderDbProjectsList();
   renderDbSeriesList();
+  try{autoBackup.scheduleBackup();}catch(_e){}
 }
 function renderDbProjectsList(){
   const pl=document.getElementById('dbProjectList');
   if(!pl)return;
   const renderProj=p=>{
     const pid=p.id;
-    return`<div class="db-item" onclick="loadProjectFromDb(${pid})"><div style="flex:1;min-width:0"><div>${esc(p.name||'(no name)')}</div><div class="db-meta">${fmtDbSavedAt(p.savedAt)}</div></div><div class="db-item-actions"><button type="button" class="btn" onclick="event.stopPropagation();openProjectMetaModal(${pid})">Edit</button><button type="button" class="btn warn" onclick="event.stopPropagation();deleteDbProject(${pid})">x</button></div></div>`;
+    const expanded=isDbItemExpanded('proj',pid);
+    const tri=expanded?'▾':'▸';
+    return`<div class="db-item-block"><div class="db-item" onclick="loadProjectFromDb(${pid})"><span class="db-item-tri" onclick="event.stopPropagation();toggleDbItemDetail('proj',${pid})" title="Show details">${tri}</span><div style="flex:1;min-width:0"><div>${esc(p.name||'(no name)')}</div><div class="db-meta">${fmtDbSavedAt(p.savedAt)}</div></div><div class="db-item-actions"><button type="button" class="btn" onclick="event.stopPropagation();openProjectMetaModal(${pid})">Edit</button><button type="button" class="btn warn" onclick="event.stopPropagation();deleteDbProject(${pid})">x</button></div></div>${expanded?`<div class="db-item-detail">${projectDetailHtml(p)}</div>`:''}</div>`;
   };
   pl.innerHTML=dbProjects.length?renderDbListOrFlat(dbProjects,renderProj,'proj'):'<div class="empty">No saved projects</div>';
 }
@@ -4095,7 +4236,9 @@ function renderDbSeriesList(){
   if(!tsl)return;
   const renderTs=t=>{
     const tid=t.id;
-    return`<div class="db-item" onclick="loadThermalSeriesFromDb(${tid})"><div style="flex:1;min-width:0"><div>${esc(t.name||'Series')}</div><div class="db-meta">${t.memberUids?t.memberUids.length:0} samples</div></div><div class="db-item-actions"><button type="button" class="btn" onclick="event.stopPropagation();openSeriesMetaModal(${tid})">Edit</button><button type="button" class="btn warn" onclick="event.stopPropagation();deleteThermalSeriesFromDb(${tid},event)">x</button></div></div>`;
+    const expanded=isDbItemExpanded('series',tid);
+    const tri=expanded?'▾':'▸';
+    return`<div class="db-item-block"><div class="db-item" onclick="loadThermalSeriesFromDb(${tid})"><span class="db-item-tri" onclick="event.stopPropagation();toggleDbItemDetail('series',${tid})" title="Show details">${tri}</span><div style="flex:1;min-width:0"><div>${esc(t.name||'Series')}</div><div class="db-meta">${t.memberUids?t.memberUids.length:0} samples</div></div><div class="db-item-actions"><button type="button" class="btn" onclick="event.stopPropagation();openSeriesMetaModal(${tid})">Edit</button><button type="button" class="btn warn" onclick="event.stopPropagation();deleteThermalSeriesFromDb(${tid},event)">x</button></div></div>${expanded?`<div class="db-item-detail">${seriesDetailHtml(t)}</div>`:''}</div>`;
   };
   tsl.innerHTML=dbThermalSeries.length?renderDbListOrFlat(dbThermalSeries,renderTs,'series'):'<div class="empty">No saved series</div>';
 }
@@ -4658,12 +4801,119 @@ async function confirmSaveProject(){
     toast('Project save failed: '+(e.message||e));
   }
 }
-async function exportFullDb(){
+async function buildDbExportPayload(){
   let thermalSeriesPresets=[];
   try{thermalSeriesPresets=await adapter.listThermalSeries();}catch(_e){thermalSeriesPresets=[];}
-  const payload={version:2,exportedAt:new Date().toISOString(),files:await adapter.listFiles(),projects:await adapter.listProjects(),thermalSeriesPresets};
-  downloadText(`xrd_th_db_full_${stamp()}.json`,JSON.stringify(payload,null,2));toast('DB exported');
+  return {version:2,exportedAt:new Date().toISOString(),files:await adapter.listFiles(),projects:await adapter.listProjects(),thermalSeriesPresets};
 }
+async function exportFullDb(){
+  downloadText(`xrd_th_db_full_${stamp()}.json`,JSON.stringify(await buildDbExportPayload(),null,2));toast('DB exported');
+}
+
+/** Auto-backup the whole DB to a user-chosen local folder (File System Access API).
+ * Backup files survive cache deletion, so the cache can be restored via DB Import.
+ * The folder handle is stored in IndexedDB (appState); if the cache itself is wiped
+ * the handle is lost too, but the on-disk backups remain and the user re-links the folder. */
+const AUTO_BACKUP_KEY='autoBackupDir';
+const autoBackup={
+  handle:null,
+  state:'off', // 'off' | 'on' | 'reconnect'
+  timer:null,
+  lastBackupAt:null,
+  supported(){return typeof window!=='undefined'&&typeof window.showDirectoryPicker==='function'&&window.isSecureContext;},
+  async loadHandle(){try{const rec=await adapter.getState(AUTO_BACKUP_KEY);return rec&&rec.value?rec.value:null;}catch(_e){return null;}},
+  async queryPerm(h){try{return await h.queryPermission({mode:'readwrite'});}catch(_e){return 'denied';}},
+  async requestPerm(h){try{return await h.requestPermission({mode:'readwrite'});}catch(_e){return 'denied';}},
+  setState(s){this.state=s;this.updateUi();},
+  async restoreOnStartup(){
+    if(!this.supported()){this.setState('off');return;}
+    const h=await this.loadHandle();
+    if(!h){this.setState('off');return;}
+    this.handle=h;
+    const p=await this.queryPerm(h);
+    if(p==='granted'){this.setState('on');this.scheduleBackup(8000);}
+    else this.setState('reconnect');
+  },
+  async pickFolder(){
+    if(!this.supported()){toast('Auto-backup needs Chrome/Edge (File System Access API).');return;}
+    let h;
+    try{h=await window.showDirectoryPicker({mode:'readwrite',id:'xrdBackup'});}
+    catch(e){if(e&&e.name==='AbortError')return;toast('Folder pick failed: '+(e.message||e));return;}
+    if(await this.requestPerm(h)!=='granted'){toast('Write permission denied.');return;}
+    this.handle=h;
+    try{await adapter.setState(AUTO_BACKUP_KEY,h);}catch(e){console.error(e);}
+    this.setState('on');
+    await this.writeNow(true);
+  },
+  async reconnect(){
+    if(!this.handle)return this.pickFolder();
+    if(await this.requestPerm(this.handle)!=='granted'){toast('Permission denied.');return;}
+    this.setState('on');
+    await this.writeNow(true);
+  },
+  async disable(){
+    this.handle=null;clearTimeout(this.timer);this.setState('off');
+    try{await adapter.deleteState(AUTO_BACKUP_KEY);}catch(_e){}
+    toast('Auto-backup turned off');
+  },
+  onClick(){
+    if(this.state==='on')this.writeNow(true);
+    else if(this.state==='reconnect')this.reconnect();
+    else this.pickFolder();
+  },
+  scheduleBackup(delay=2500){
+    if(this.state!=='on'||!this.handle)return;
+    clearTimeout(this.timer);
+    this.timer=setTimeout(()=>{this.writeNow(false);},delay);
+  },
+  async writeFile(name,text){
+    const fh=await this.handle.getFileHandle(name,{create:true});
+    const w=await fh.createWritable();
+    await w.write(text);await w.close();
+  },
+  async writeNow(announce){
+    if(!this.handle)return;
+    if(await this.queryPerm(this.handle)!=='granted'){this.setState('reconnect');if(announce)toast('Backup needs folder reconnect.');return;}
+    try{
+      const payload=await buildDbExportPayload();
+      // Don't clobber existing backups with an empty snapshot (e.g. after an accidental Clear).
+      if(!payload.files.length&&!payload.projects.length&&!payload.thermalSeriesPresets.length){
+        if(announce)toast('Nothing to back up (DB is empty).');
+        return;
+      }
+      const text=JSON.stringify(payload,null,2);
+      const d=new Date(),pad=n=>String(n).padStart(2,'0');
+      const day=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+      await this.writeFile('xrd_th_db_latest.json',text);
+      await this.writeFile(`xrd_th_db_${day}.json`,text);
+      this.lastBackupAt=new Date();
+      this.updateUi();
+      if(announce)toast('Backup saved to folder');
+    }catch(e){console.error(e);this.setState('reconnect');if(announce)toast('Backup failed: '+(e.message||e));}
+  },
+  updateUi(){
+    const btn=document.getElementById('autoBackupBtn');
+    const off=document.getElementById('autoBackupOffBtn');
+    if(!btn)return;
+    const name=this.handle&&this.handle.name?this.handle.name:'';
+    btn.classList.remove('green','warn');
+    if(this.state==='on'){
+      btn.textContent='Backup: '+(name||'on');
+      btn.title='Auto-backup ON → "'+name+'". Click to back up now.'+(this.lastBackupAt?(' Last: '+this.lastBackupAt.toLocaleTimeString()):'');
+      btn.classList.add('green');
+      if(off)off.style.display='';
+    }else if(this.state==='reconnect'){
+      btn.textContent='Backup: reconnect';
+      btn.title='Backup folder "'+name+'" needs permission again. Click to reconnect.';
+      btn.classList.add('warn');
+      if(off)off.style.display='';
+    }else{
+      btn.textContent='Backup: off';
+      btn.title=this.supported()?'Click to choose a folder for automatic DB backups.':'Auto-backup unavailable (needs Chrome/Edge over a secure context).';
+      if(off)off.style.display='none';
+    }
+  }
+};
 async function importFullDb(file){
   const r=new FileReader();
   r.onload=async e=>{
@@ -4748,6 +4998,7 @@ document.getElementById('dbIn').addEventListener('change',e=>{const f=e.target.f
   if(typeof indexedDB==='undefined')toast('IndexedDB not available — DB cache disabled (private mode, etc.).');
   try{syncXrdChartHeight();syncOuterChartHeight();const src=document.getElementById('xrdSourceMode');if(src)src.value=xrdSourceMode;updateXaxisModeUi();updateCombineXaxisModeUi();updateXrdModeButtons();updateCombineModeButtons();}catch(e){console.error(e);}
   try{await refreshDbPanels();}catch(e){console.error(e);toast('DB init: '+(e.message||e));}
+  try{await autoBackup.restoreOnStartup();}catch(e){console.error(e);}
   try{renderAll();}catch(e){console.error(e);toast('UI: '+(e.message||e));}
 })();
 </script>
