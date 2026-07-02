@@ -280,10 +280,9 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <button class="btn warn" id="autoBackupOffBtn" onclick="autoBackup.disable()" style="display:none" title="Turn off auto-backup">x</button>
           </div>
           <div class="ctrl-row" id="dbBulkBar" style="margin-top:5px;align-items:center;gap:6px">
-            <label class="db-bulk-all" title="Select / deselect all currently shown files"><input type="checkbox" id="dbBulkAllChk" onclick="toggleDbBulkAll(this.checked)">All shown</label>
-            <span id="dbBulkCount" style="font-size:10px;color:var(--text3)">0 selected</span>
-            <button class="btn" id="dbBulkEditBtn" onclick="openDbBulkEditModal()" disabled>Bulk edit</button>
-            <button class="btn" id="dbBulkClearBtn" onclick="clearDbBulkSel()" disabled>Clear</button>
+            <span id="dbBulkCount" style="font-size:10px;color:var(--text3)">Basket: 0</span>
+            <button class="btn" id="dbBulkEditBtn" onclick="openDbBulkEditModal()" disabled title="Edit metadata for every file in the basket">Bulk edit basket</button>
+            <button class="btn" id="dbBulkClearBtn" onclick="clearFirstBasket()" disabled>Clear basket</button>
           </div>
         </div>
         <div class="db-filter-row" id="dbFilterRow">
@@ -3986,38 +3985,15 @@ function toggleDbTreeNode(key){
   dbTreeCollapsed[key]=!isDbTreeCollapsed(key);
   renderDbFileList();
 }
-/* ---- DB File Cache: bulk-edit selection ---- */
-function toggleDbBulkSel(id,on){
-  if(on)dbBulkSel.add(id);else dbBulkSel.delete(id);
-  updateDbBulkBar();
-}
-function clearDbBulkSel(){
-  dbBulkSel.clear();
-  renderDbFileList();
-}
-function toggleDbBulkAll(on){
-  if(on)dbBulkShownIds.forEach(id=>dbBulkSel.add(id));
-  else dbBulkShownIds.forEach(id=>dbBulkSel.delete(id));
-  renderDbFileList();
-}
+/* ---- DB File Cache: bulk edit applies to the whole first basket ---- */
 function updateDbBulkBar(){
-  // prune selections whose files no longer exist
-  const live=new Set(dbFiles.map(f=>f.id));
-  [...dbBulkSel].forEach(id=>{if(!live.has(id))dbBulkSel.delete(id);});
-  const n=dbBulkSel.size;
+  const n=firstBasket.length;
   const cnt=document.getElementById('dbBulkCount');
-  if(cnt)cnt.textContent=`${n} selected`;
+  if(cnt)cnt.textContent=`Basket: ${n}`;
   const editBtn=document.getElementById('dbBulkEditBtn');
   const clrBtn=document.getElementById('dbBulkClearBtn');
   if(editBtn)editBtn.disabled=n<1;
   if(clrBtn)clrBtn.disabled=n<1;
-  const all=document.getElementById('dbBulkAllChk');
-  if(all){
-    const shown=dbBulkShownIds;
-    const selShown=shown.filter(id=>dbBulkSel.has(id)).length;
-    all.checked=shown.length>0&&selShown===shown.length;
-    all.indeterminate=selShown>0&&selShown<shown.length;
-  }
 }
 function renderDbFileItem(f){
   const fid=f.id;
@@ -4053,7 +4029,6 @@ function renderDbFileItem(f){
       </div>
     </div>
     <div class="db-item-actions">
-      <input type="checkbox" class="db-bulk-chk" ${dbBulkSel.has(fid)?'checked':''} onclick="event.stopPropagation();toggleDbBulkSel(${fid},this.checked)" title="Select for bulk edit">
       <button type="button" class="btn" onclick="event.stopPropagation();openFileFolderModal(${fid})">Folder</button>
       <button type="button" class="btn warn" onclick="event.stopPropagation();deleteDbFile(${fid})">x</button>
     </div>
@@ -4355,7 +4330,7 @@ async function loadFileFromDb(id){
     let p;
     if(isProjectSample){
       const b64=rec.rawText.slice('__PROJECT_SAMPLE_JSON__'.length);
-      const json=atob(b64);
+      const json=b64DecodeUtf8(b64);
       p=JSON.parse(json);
       if(p&&typeof p==='object'){
         p.rawName=p.rawName||rec.name||p.name||'';
@@ -4426,6 +4401,7 @@ function reorderFirstBasket(fromId,toId){
 function renderFirstBasket(){
   const el=document.getElementById('firstBasketList');
   const cnt=document.getElementById('firstBasketCount');
+  updateDbBulkBar();
   if(!el)return;
   if(!firstBasket.length){el.innerHTML='<div class="empty">Basket is empty — check files above</div>';if(cnt)cnt.textContent='';return;}
   if(cnt)cnt.textContent=`${basketIncludedIds().length}/${firstBasket.length}`;
@@ -4454,7 +4430,7 @@ async function ensureDbFileLoaded(id){
     const isHDF5b64=typeof rec.rawText==='string'&&rec.rawText.startsWith('__HDF5_BASE64__');
     const isProjectSample=typeof rec.rawText==='string'&&rec.rawText.startsWith('__PROJECT_SAMPLE_JSON__');
     let p;
-    if(isProjectSample){const b64=rec.rawText.slice('__PROJECT_SAMPLE_JSON__'.length);p=JSON.parse(atob(b64));if(p&&typeof p==='object'){p.rawName=p.rawName||rec.name||p.name||'';p.name=p.name||p.rawName||rec.name||'sample';}}
+    if(isProjectSample){const b64=rec.rawText.slice('__PROJECT_SAMPLE_JSON__'.length);p=JSON.parse(b64DecodeUtf8(b64));if(p&&typeof p==='object'){p.rawName=p.rawName||rec.name||p.name||'';p.name=p.name||p.rawName||rec.name||'sample';}}
     else if(isHDF5b64){const b64=rec.rawText.slice('__HDF5_BASE64__'.length);const bin=atob(b64);const buf=new ArrayBuffer(bin.length);const view=new Uint8Array(buf);for(let i=0;i<bin.length;i++)view[i]=bin.charCodeAt(i);p=await parseHDF5(buf,rec.name);}
     else{p=await Promise.resolve(parseAny({name:rec.name},rec.rawText));}
     if(!p)return null;
@@ -4605,6 +4581,18 @@ async function dupFinderDeleteSelected(){
   toast(`Deleted ${ok}${fail?`, ${fail} failed`:''}. ${stillThere.length===0?'Verified removed from DB.':'Some still remain!'}`);
 }
 async function clearDbFiles(){if(!confirm('Clear all cached files?'))return;await adapter.clearFiles();refreshDbPanels();}
+// UTF-8-safe base64 (btoa/atob only handle Latin1, so raw btoa throws on Japanese text).
+function b64EncodeUtf8(str){
+  const bytes=new TextEncoder().encode(str);
+  let bin='';const CHUNK=0x8000;
+  for(let i=0;i<bytes.length;i+=CHUNK)bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+CHUNK));
+  return btoa(bin);
+}
+function b64DecodeUtf8(b64){
+  const bin=atob(b64);const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
 function buildProjectCacheRecordFromSample(s){
   if(!s)return null;
   const cacheName=(s.rawName&&String(s.rawName).trim())||((s.name&&String(s.name).trim())?String(s.name).trim():'sample_from_project');
@@ -4627,7 +4615,7 @@ function buildProjectCacheRecordFromSample(s){
   const measurementTimeMin=s?.meta&&Number.isFinite(+s.meta.measurementTimeMin)?(+s.meta.measurementTimeMin):null;
   return{
     name:cacheName,
-    rawText:'__PROJECT_SAMPLE_JSON__'+btoa(JSON.stringify(cacheSample)),
+    rawText:'__PROJECT_SAMPLE_JSON__'+b64EncodeUtf8(JSON.stringify(cacheSample)),
     rowCount:Array.isArray(cacheSample.tth)?cacheSample.tth.length:0,
     folderPath:'',
     sampleLabel,
@@ -4727,8 +4715,8 @@ async function confirmFileMetaEdit(){
   }catch(e){toast(e.message);}
 }
 function openDbBulkEditModal(){
-  if(!dbBulkSel.size){toast('No files selected');return;}
-  document.getElementById('dbBulkEditLabel').textContent=`${dbBulkSel.size} file(s) selected`;
+  if(!firstBasket.length){toast('Basket is empty — add files to the basket first');return;}
+  document.getElementById('dbBulkEditLabel').textContent=`${firstBasket.length} file(s) in basket`;
   ['bulkSetSampleLabel','bulkSetTags','bulkSetCap','bulkSetMeasTime','bulkSetMeasStart','bulkSetMeasEnd','bulkSetTemp'].forEach(id=>{const el=document.getElementById(id);if(el)el.checked=false;});
   ['bulkSampleLabel','bulkTags','bulkCap','bulkMeasTime','bulkMeasStart','bulkMeasEnd','bulkTemp'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const tm=document.getElementById('bulkTagsMode');if(tm)tm.value='replace';
@@ -4736,7 +4724,7 @@ function openDbBulkEditModal(){
 }
 function closeDbBulkEditModal(){document.getElementById('dbBulkEditModal').classList.remove('show');}
 async function confirmDbBulkEdit(){
-  const ids=[...dbBulkSel];
+  const ids=[...firstBasket];
   if(!ids.length){closeDbBulkEditModal();return;}
   const setLabel=document.getElementById('bulkSetSampleLabel').checked;
   const setTags=document.getElementById('bulkSetTags').checked;
