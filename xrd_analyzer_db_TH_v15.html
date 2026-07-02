@@ -2114,6 +2114,7 @@ function handleFiles(fileList){
   const list=[...fileList].filter(f=>ACCEPTED.test(f.name)).sort((a,b)=>naturalCompare({name:a.name},{name:b.name}));
   if(!list.length){toast('No .ras / .scn / .xrdml / .hdf5 files found');return;}
   const pendingRef={n:list.length};
+  const batchClaimed=new Set(); /* names claimed during this batch, to guard the parallel-read dup race */
   list.forEach((f,idx)=>{
     const isHDF5=/\.(hdf5|h5)$/i.test(f.name);
     const r=new FileReader();
@@ -2132,11 +2133,19 @@ function handleFiles(fileList){
           }).then(p2=>{p=p2;}).catch(()=>{});
         }
         if(p){
-          /* Duplicate check: skip if same name exists in memory or DB */
+          /* Duplicate check: skip if the same name is already loaded, already in the DB,
+             or already claimed earlier in THIS batch. The batch claim is synchronous (no
+             await between the check and the add), so two parallel reads of the same name
+             can't both slip past and double-write. */
           const alreadyInMemory=samples.some(s=>s.rawName===f.name);
+          if(alreadyInMemory||batchClaimed.has(f.name)){
+            toast(`Skipped: "${f.name}" is already loaded`);
+            finishRasBatch(pendingRef);return;
+          }
+          batchClaimed.add(f.name);
           let alreadyInDb=false;
           try{const existing=await adapter.listFiles();alreadyInDb=existing.some(x=>x.name===f.name);}catch(_e){}
-          if(alreadyInMemory||alreadyInDb){
+          if(alreadyInDb){
             toast(`Skipped: "${f.name}" is already loaded`);
           }else{
             p.color=COLORS[(samples.length+idx)%COLORS.length];
@@ -2156,7 +2165,7 @@ function handleFiles(fileList){
             }else{
               dbPayload={name:f.name,rawText:raw,rowCount:p.tth.length,folderPath:'',tempC:tempCForDb,sampleLabel:'',tags:[],capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null};
             }
-            try{await adapter.saveFile(dbPayload);}catch(err){console.error(err);toast('DB save: '+(err.message||err));}
+            try{const newId=await adapter.saveFile(dbPayload);if(newId!=null)p.dbId=newId;}catch(err){console.error(err);toast('DB save: '+(err.message||err));}
           }
         }else{
           toast(`Could not parse: ${f.name} (Supported: .ras .scn .xrdml .hdf5)`);
@@ -3384,7 +3393,10 @@ async function setXrdTraceMetaByUid(uid,field,value){
   const s=samples.find(x=>x.sampleUid===uid);
   if(!s)return;
   const keyName=(s.rawName&&String(s.rawName).trim())||(s.name&&String(s.name).trim())||'';
-  const rec=(dbFiles||[]).find(f=>String(f?.name||'').trim()===keyName);
+  /* Resolve the DB record by its real id first (stamped on load/save) so metadata edits
+     hit the exact record even when several cached files share a name; fall back to name. */
+  let rec=(s.dbId!=null)?(dbFiles||[]).find(f=>f&&f.id===s.dbId):null;
+  if(!rec)rec=(dbFiles||[]).find(f=>String(f?.name||'').trim()===keyName);
   const next={...(rec||{name:keyName,rawText:'',rowCount:s.tth?.length||0,folderPath:'',sampleLabel:'',tags:[]})};
   if(field==='sampleLabel'){
     next.sampleLabel=String(value||'').trim();
