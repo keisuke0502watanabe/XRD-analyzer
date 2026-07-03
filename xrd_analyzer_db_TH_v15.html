@@ -862,6 +862,29 @@ function runEnvironmentChecks(){
   el.classList.add('app-notice--on');
   try{console.warn('[XRD env]',lines.join(' | '));}catch(_e){}
 }
+/** Append a line to the persistent notice banner (used after runEnvironmentChecks). */
+function appNoticeAdd(line){
+  const el=document.getElementById('appNotice');if(!el)return;
+  el.textContent=el.textContent?el.textContent+'\n\n'+line:line;
+  el.classList.add('app-notice--on');
+  try{console.warn('[XRD storage]',line);}catch(_e){}
+}
+/** Ask the browser to keep IndexedDB durable; warn if it stays best-effort and
+    there is unbacked-up cached data that eviction could silently destroy. */
+async function ensureStoragePersisted(){
+  try{
+    let persisted=false;
+    if(navigator.storage&&navigator.storage.persisted){
+      try{persisted=await navigator.storage.persisted();}catch(_e){}
+      if(!persisted&&navigator.storage.persist){try{persisted=await navigator.storage.persist();}catch(_e){}}
+    }
+    const hasData=Array.isArray(dbFiles)&&dbFiles.length>0;
+    const backupOn=!!(typeof autoBackup!=='undefined'&&autoBackup&&autoBackup.state==='on');
+    if(!persisted&&hasData&&!backupOn){
+      appNoticeAdd('Browser storage is "best-effort", so the DB cache ('+dbFiles.length+' files) can be evicted automatically under disk pressure or in a private window. Enable auto-backup to a local folder, or export the DB, to keep your data safe.');
+    }
+  }catch(_e){}
+}
 function setTheme(theme){
   uiTheme=theme==='dark'?'dark':'light';
   document.body.classList.toggle('theme-dark',uiTheme==='dark');
@@ -4999,6 +5022,7 @@ document.getElementById('dbIn').addEventListener('change',e=>{const f=e.target.f
   try{syncXrdChartHeight();syncOuterChartHeight();const src=document.getElementById('xrdSourceMode');if(src)src.value=xrdSourceMode;updateXaxisModeUi();updateCombineXaxisModeUi();updateXrdModeButtons();updateCombineModeButtons();}catch(e){console.error(e);}
   try{await refreshDbPanels();}catch(e){console.error(e);toast('DB init: '+(e.message||e));}
   try{await autoBackup.restoreOnStartup();}catch(e){console.error(e);}
+  try{await ensureStoragePersisted();}catch(e){console.error(e);}
   try{renderAll();}catch(e){console.error(e);toast('UI: '+(e.message||e));}
 })();
 </script>
