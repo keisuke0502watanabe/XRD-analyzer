@@ -90,12 +90,14 @@ Chrome/Edge only (File System Access API). Lets the cache survive a browser-cach
 ## Full DB export (`exportFullDb`)
 Structure:
 - `version: 2`
+- `app: 'xrd_th'` — app discriminator (DSC dumps use `'dsc'`)
 - `exportedAt: string`
 - `files: files[]`
 - `projects: projects[]`
 - `thermalSeriesPresets: thermalSeries[]`
 
 ## Full DB import (`importFullDb`)
+- Rejects a dump whose `app` is present and not `'xrd_th'` (avoids cross-app corruption); dumps without `app` are still accepted (legacy)
 - Supports **replace** or **merge**
 - Merge skip rules:
   - `files`: skip if same `name`

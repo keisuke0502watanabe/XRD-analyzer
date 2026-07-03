@@ -4827,7 +4827,7 @@ async function confirmSaveProject(){
 async function buildDbExportPayload(){
   let thermalSeriesPresets=[];
   try{thermalSeriesPresets=await adapter.listThermalSeries();}catch(_e){thermalSeriesPresets=[];}
-  return {version:2,exportedAt:new Date().toISOString(),files:await adapter.listFiles(),projects:await adapter.listProjects(),thermalSeriesPresets};
+  return {version:2,app:'xrd_th',exportedAt:new Date().toISOString(),files:await adapter.listFiles(),projects:await adapter.listProjects(),thermalSeriesPresets};
 }
 async function exportFullDb(){
   downloadText(`xrd_th_db_full_${stamp()}.json`,JSON.stringify(await buildDbExportPayload(),null,2));toast('DB exported');
@@ -4943,6 +4943,7 @@ async function importFullDb(file){
     try{
       const payload=JSON.parse(e.target.result);
       if(!Array.isArray(payload.files)||!Array.isArray(payload.projects))throw new Error('Invalid DB dump');
+      if(payload.app&&payload.app!=='xrd_th')throw new Error(`This looks like a "${payload.app}" DB dump, not an XRD one. Import aborted to avoid corrupting the database.`);
       const replace=confirm('OK=replace / Cancel=merge?');
       if(replace){await adapter.clearFiles();await adapter.clearProjects();try{await adapter.clearThermalSeries();}catch(_e){}}
       const existingFiles=replace?[]:await adapter.listFiles();
