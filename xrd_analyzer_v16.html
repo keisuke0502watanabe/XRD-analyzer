@@ -523,6 +523,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <label><span id="combineXAxisMaxLbl">2θ max</span><input class="num" id="combineXMax" type="number" step="0.5" value="32" oninput="redrawOuterChart()"></label>
               <label>Y min<input class="num" id="combineYMin" type="number" step="10" placeholder="auto" oninput="redrawOuterChart()"></label>
               <label>Y max<input class="num" id="combineYMax" type="number" step="10" placeholder="auto" oninput="redrawOuterChart()"></label>
+              <label>Y scale<select class="txt-sm" id="combineYScale" onchange="redrawOuterChart()" title="Logarithmic Y is best in Overlay with Offset 0 (SAXS/WAXS intensities span decades); non-positive points are dropped"><option value="linear">Linear</option><option value="log">Log</option></select></label>
               <label>&nbsp;<button type="button" class="btn" id="combineAutoScaleBtn" onclick="autoScaleCombineY()" title="Fit Y axis to the plotted data in the current X range">Auto scale</button></label>
               <label>X mode<select class="txt-sm" id="combineXAxisMode" onchange="setCombineXAxisMode(this.value)"><option value="2theta">2theta (deg)</option><option value="d">d (nm)</option><option value="nm-1">nm^-1 (1/d)</option><option value="q">q (nm^-1)</option></select></label>
               <label>X-axis label<input class="txt-sm" id="combineXTitle" type="text" value="2theta (deg)" oninput="redrawOuterChart()"></label>
@@ -2987,12 +2988,15 @@ function readCombineScaleOpts(){
   const yMax=yMaxRaw!==''&&yMaxRaw!=null?parseFloat(yMaxRaw):NaN;
   const xTitle=(document.getElementById('combineXTitle')?.value||'').trim()||defaultXaxisTitleForMode(combineXAxisMode);
   const yTitle=(document.getElementById('combineYTitle')?.value||'').trim()||'Intensity (cps)';
+  const yLog=document.getElementById('combineYScale')?.value==='log';
   const x={type:'linear',title:{display:true,text:xTitle}};
   const y={title:{display:true,text:yTitle}};
+  if(yLog)y.type='logarithmic';
   if(isFinite(xMin))x.min=xMin;
   if(isFinite(xMax))x.max=xMax;
-  if(isFinite(yMin))y.min=yMin;
-  if(isFinite(yMax))y.max=yMax;
+  /* A logarithmic axis needs positive bounds — ignore a non-positive manual min/max. */
+  if(isFinite(yMin)&&(!yLog||yMin>0))y.min=yMin;
+  if(isFinite(yMax)&&(!yLog||yMax>0))y.max=yMax;
   return{x,y};
 }
 function setXrdXAxisMode(mode){
@@ -3235,6 +3239,7 @@ function readCombineChartSettingsFromDom(){
     combineXMax:document.getElementById('combineXMax')?.value??'',
     combineYMin:document.getElementById('combineYMin')?.value??'',
     combineYMax:document.getElementById('combineYMax')?.value??'',
+    combineYScale:document.getElementById('combineYScale')?.value??'linear',
     combineXTitle:document.getElementById('combineXTitle')?.value??'',
     combineYTitle:document.getElementById('combineYTitle')?.value??''
   };
@@ -3263,6 +3268,7 @@ function applyCombineChartSettingsToDom(s){
   const yMax=s.combineYMax!=null?s.combineYMax:s.outerYMax!=null?s.outerYMax:s.xrdYMax;
   set('combineXMin',xMin);set('combineXMax',xMax);
   set('combineYMin',yMin);set('combineYMax',yMax);
+  {const el=document.getElementById('combineYScale');if(el)el.value=(s.combineYScale==='log')?'log':'linear';}
   set('combineXTitle',s.combineXTitle||s.outerXTitle||s.xrdXTitle);
   set('combineYTitle',s.combineYTitle||s.outerYTitle||s.xrdYTitle);
   updateCombineXaxisModeUi();
@@ -5887,7 +5893,33 @@ const autoBackup={
   async writeFile(name,text){
     const fh=await this.handle.getFileHandle(name,{create:true});
     const w=await fh.createWritable();
-    await w.write(text);await w.close();
+    try{await w.write(text);await w.close();}catch(e){try{await w.abort();}catch(_){}throw e;}
+  },
+  /* Stream the payload to disk element-by-element so a large DB never has to exist as one
+     giant JSON string — JSON.stringify of a many-file cache throws "RangeError: Invalid
+     string length" past V8's ~512 MB limit. Output equals compact JSON.stringify (import
+     re-parses it fine). On error, abort() discards the partial .crswap temp file. */
+  async writeJsonStreamed(name,obj){
+    const fh=await this.handle.getFileHandle(name,{create:true});
+    const w=await fh.createWritable();
+    try{
+      await w.write('{');
+      const keys=Object.keys(obj);
+      for(let ki=0;ki<keys.length;ki++){
+        const k=keys[ki],v=obj[k];
+        if(ki)await w.write(',');
+        await w.write(JSON.stringify(k)+':');
+        if(Array.isArray(v)){
+          await w.write('[');
+          for(let i=0;i<v.length;i++){if(i)await w.write(',');await w.write(JSON.stringify(v[i]));}
+          await w.write(']');
+        }else{
+          await w.write(JSON.stringify(v));
+        }
+      }
+      await w.write('}');
+      await w.close();
+    }catch(e){try{await w.abort();}catch(_){}throw e;}
   },
   async writeNow(announce){
     if(!this.handle)return;
@@ -5899,15 +5931,22 @@ const autoBackup={
         if(announce)toast('Nothing to back up (DB is empty).');
         return;
       }
-      const text=JSON.stringify(payload,null,2);
       const d=new Date(),pad=n=>String(n).padStart(2,'0');
       const day=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
-      await this.writeFile('xrd_th_db_latest.json',text);
-      await this.writeFile(`xrd_th_db_${day}.json`,text);
+      await this.writeJsonStreamed('xrd_th_db_latest.json',payload);
+      await this.writeJsonStreamed(`xrd_th_db_${day}.json`,payload);
       this.lastBackupAt=new Date();
       this.updateUi();
       if(announce)toast('Backup saved to folder');
-    }catch(e){console.error(e);this.setState('reconnect');if(announce)toast('Backup failed: '+(e.message||e));}
+    }catch(e){
+      console.error(e);
+      /* Only a permission/missing-folder failure benefits from "reconnect"; a size/length
+         or transient write error does not — flag it but stay connected so the next
+         scheduled backup retries instead of looping through the reconnect prompt. */
+      const needsReconnect=e&&(e.name==='NotAllowedError'||e.name==='SecurityError'||e.name==='NotFoundError');
+      if(needsReconnect){this.setState('reconnect');if(announce)toast('Backup needs folder reconnect.');}
+      else if(announce)toast('Backup failed: '+(e.message||e));
+    }
   },
   updateUi(){
     const btn=document.getElementById('autoBackupBtn');
