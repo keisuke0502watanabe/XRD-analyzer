@@ -346,6 +346,8 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
           </div>
           <div class="ctrl-row" id="dbBulkBar" style="margin-top:5px;align-items:center;gap:6px">
             <span id="dbBulkCount" style="font-size:10px;color:var(--text3)">Basket: 0</span>
+            <button class="btn green" onclick="selectFilteredToBasket(true)" title="Add every file matching the current filter to the basket">+ filtered → basket</button>
+            <button class="btn" onclick="selectFilteredToBasket(false)" title="Remove every file matching the current filter from the basket">− filtered</button>
             <button class="btn" id="dbBulkEditBtn" onclick="openDbBulkEditModal()" disabled title="Edit metadata for every file in the basket">Bulk edit basket</button>
             <button class="btn" id="dbBulkClearBtn" onclick="clearFirstBasket()" disabled>Clear basket</button>
             <button class="btn" onclick="autoTagAlbaScans({toast:true})" title="Tag ALBA frames by scan name: iso_1, ramp_up_2, … (both detectors share the tag)">Auto-tag: scan name</button>
@@ -443,6 +445,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <select class="txt-sm" id="thermalSeriesSelect" style="max-width:160px" onchange="setActiveThermalSeriesId(this.value)"></select>
               <button class="btn" onclick="openSeriesEditorModal()">Edit series</button>
               <button class="btn" onclick="createSeriesFromAllSamples()">Series from all</button>
+              <button class="btn green" onclick="createSeriesFromScans()" title="Auto-build one series per detector×scan (SAXS·iso_1, WAXS·ramp_up_1, …), members ordered by measurement time">Series from scans</button>
               <label style="font-size:10px;display:flex;align-items:center;gap:3px" title="Overlay the thermal history of every series related to the active pattern (or active series)"><input type="checkbox" id="thermalMultiSeriesChk" onchange="setThermalMultiSeries(this.checked)">Related series overlay</label>
               <span>Unit</span>
               <button class="btn" onclick="setUnit('date')">date</button>
@@ -493,7 +496,9 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <input type="text" id="basketSearch" class="txt-sm" placeholder="search name / temp / tag" oninput="setBasketSearch(this.value)" style="flex:1;min-width:90px">
               <label style="font-size:10px;display:flex;align-items:center;gap:3px"><input type="checkbox" id="basketSelectedOnly" onchange="setBasketSelectedOnly(this.checked)">selected only</label>
               <span id="basketCount" style="font-size:10px;color:var(--text3)"></span>
-              <button type="button" class="btn" onclick="clearBasketSelection()" style="padding:2px 6px;font-size:10px">clear</button>
+              <button type="button" class="btn green" onclick="addShownToBasket()" style="padding:2px 6px;font-size:10px" title="Add all currently-shown (filtered) traces to this pattern">+ shown</button>
+              <button type="button" class="btn" onclick="removeShownFromBasket()" style="padding:2px 6px;font-size:10px" title="Remove the currently-shown (filtered) traces from this pattern">− shown</button>
+              <button type="button" class="btn" onclick="clearBasketSelection()" style="padding:2px 6px;font-size:10px" title="Remove all traces from this pattern">clear</button>
             </div>
             <div id="combineSamplePicker" style="max-height:min(200px,26vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:4px 6px;margin-bottom:6px;font-size:11px"></div>
             <div class="title" style="margin-bottom:4px">Trace settings</div>
@@ -851,6 +856,7 @@ const LEGEND_FORMAT_OPTIONS=[
   {id:'temp',label:'Temp'},
   {id:'instrument',label:'Instrument'},
   {id:'site',label:'Site'},
+  {id:'tags',label:'Tags'},
   {id:'filename',label:'Filename'}
 ];
 let legendFormatParts=['filename'];
@@ -2253,16 +2259,24 @@ function buildAlbaFrameTimeMap(files){
     (both detectors of one scan share the tag) and idempotent (re-run replaces the scan
     tags it owns). Operates on cached DB records + loaded samples together for consistent
     numbering. Pass {toast:true} for the manual button. */
+/** Map each distinct scan group key → its scan tag (iso_1, ramp_up_2, …), numbering
+    groups within each scan type by signed-numeric filename order. Shared by the
+    auto-tagger and the scan-series builder so both label scans identically. */
+function albaScanTagMap(names){
+  const byType={};
+  names.forEach(nm=>{const {scanType,groupKey}=albaScanParts(nm);(byType[scanType]=byType[scanType]||new Set()).add(groupKey);});
+  const keyTag={};
+  Object.keys(byType).forEach(type=>{[...byType[type]].sort(albaScanKeyCmp).forEach((k,i)=>{keyTag[k]=`${type}_${i+1}`;});});
+  return {keyTag,types:Object.keys(byType)};
+}
 async function autoTagAlbaScans(opts){
   const recs=(await adapter.listFiles().catch(()=>dbFiles))||[];
   const names=[];
   recs.forEach(r=>{if(r&&r.name&&isAlbaFrameName(r.name))names.push(r.name);});
   samples.forEach(s=>{const nm=s.rawName||s.name;if(nm&&isAlbaFrameName(nm))names.push(nm);});
   if(!names.length){if(opts&&opts.toast)toast('Auto-tag: no ALBA scan files found');return 0;}
-  const byType={};
-  names.forEach(nm=>{const {scanType,groupKey}=albaScanParts(nm);(byType[scanType]=byType[scanType]||new Set()).add(groupKey);});
-  const keyTag={};
-  Object.keys(byType).forEach(type=>{[...byType[type]].sort(albaScanKeyCmp).forEach((k,i)=>{keyTag[k]=`${type}_${i+1}`;});});
+  const {keyTag,types}=albaScanTagMap(names);
+  const byType={};types.forEach(t=>byType[t]=1);
   const tagFor=nm=>keyTag[albaScanParts(nm).groupKey]||null;
   /* Strip only the scan tags this data owns (built from the scan types present),
      so a re-run replaces them without clobbering the user's own tags. */
@@ -3554,6 +3568,57 @@ function clearBasketSelection(){
   uids.forEach(u=>removeTraceFromDescendants(cmb.id,u));
   renderPatternTree();renderOuterSegmentList();renderCombineSamplePicker();redrawOuterChart();
 }
+/** The basket samples currently visible in the picker: source narrowed by the
+    search box (name / legend / tag / temp) and the "selected only" toggle. Shared by
+    the picker render and the "add shown" bulk action so both see the same set. */
+function basketFilteredSamples(){
+  const cmb=getActiveCombine();
+  if(!cmb)return [];
+  const tracedUids=new Set((cmb.traces||[]).map(t=>t.sampleUid));
+  let src=basketSourceSamples();
+  const q=basketSearch.trim();
+  if(q){
+    src=src.filter(s=>{
+      const leg=chartLegendForSample(s).toLowerCase();
+      const nm=(s.name||'').toLowerCase();
+      const T=Number.isFinite(s.tempSetPoint)?s.tempSetPoint:(s.tempStart!=null?s.tempStart:null);
+      const tags=(s.tags||(s.meta&&s.meta.tags)||[]);
+      const tagStr=Array.isArray(tags)?tags.join(',').toLowerCase():String(tags||'').toLowerCase();
+      return leg.includes(q)||nm.includes(q)||tagStr.includes(q)||(T!=null&&String(T).includes(q));
+    });
+  }
+  if(basketSelectedOnly)src=src.filter(s=>tracedUids.has(s.sampleUid));
+  return src;
+}
+/** Add every currently-shown (filtered) basket sample to the active pattern in one
+    click — the bulk counterpart to per-row checking, for 10+ item selections. */
+function addShownToBasket(){
+  const cmb=getActiveCombine();
+  if(!cmb){toast('Select or create a pattern first');return;}
+  if(!Array.isArray(cmb.traces))cmb.traces=[];
+  const have=new Set(cmb.traces.map(t=>t.sampleUid));
+  let added=0;
+  basketFilteredSamples().forEach(s=>{
+    if(have.has(s.sampleUid))return;
+    cmb.traces.push({sampleUid:s.sampleUid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0});
+    have.add(s.sampleUid);added++;
+  });
+  if(added){renderPatternTree();renderOuterSegmentList();renderCombineSamplePicker();redrawOuterChart();}
+  toast(added?`Added ${added} trace(s)`:'Nothing new to add');
+}
+/** Remove only the currently-shown (filtered) samples from the active pattern —
+    the scoped counterpart to Clear (which drops everything). */
+function removeShownFromBasket(){
+  const cmb=getActiveCombine();
+  if(!cmb||!Array.isArray(cmb.traces)||!cmb.traces.length)return;
+  const shown=new Set(basketFilteredSamples().map(s=>s.sampleUid));
+  const drop=cmb.traces.filter(t=>shown.has(t.sampleUid)).map(t=>t.sampleUid);
+  if(!drop.length){toast('Nothing shown to remove');return;}
+  cmb.traces=cmb.traces.filter(t=>!shown.has(t.sampleUid));
+  drop.forEach(u=>removeTraceFromDescendants(cmb.id,u));
+  renderPatternTree();renderOuterSegmentList();renderCombineSamplePicker();redrawOuterChart();
+  toast(`Removed ${drop.length} trace(s)`);
+}
 function basketSourceSamples(){
   const all=samplesInDisplayOrder();
   const cmb=getActiveCombine();
@@ -3655,19 +3720,7 @@ function renderCombineSamplePicker(){
   if(!samples.length){el.innerHTML='<div class="empty" style="padding:.4rem">No samples loaded</div>';if(countEl)countEl.textContent='';return;}
   const tracedUids=new Set((cmb.traces||[]).map(t=>t.sampleUid));
   const parent=patternParent(cmb);
-  let src=basketSourceSamples();
-  const q=basketSearch.trim();
-  if(q){
-    src=src.filter(s=>{
-      const leg=chartLegendForSample(s).toLowerCase();
-      const nm=(s.name||'').toLowerCase();
-      const T=Number.isFinite(s.tempSetPoint)?s.tempSetPoint:(s.tempStart!=null?s.tempStart:null);
-      const tags=(s.tags||(s.meta&&s.meta.tags)||[]);
-      const tagStr=Array.isArray(tags)?tags.join(',').toLowerCase():String(tags||'').toLowerCase();
-      return leg.includes(q)||nm.includes(q)||tagStr.includes(q)||(T!=null&&String(T).includes(q));
-    });
-  }
-  if(basketSelectedOnly)src=src.filter(s=>tracedUids.has(s.sampleUid));
+  const src=basketFilteredSamples();
   if(countEl){
     const total=basketSourceSamples().length;
     countEl.textContent=`${tracedUids.size} sel / ${src.length} shown${src.length!==total?` (of ${total})`:''}`;
@@ -3996,6 +4049,52 @@ function createSeriesFromAllSamples(){
   thermalViewMode='series';
   updateThermalModeButtons();renderThermalSeriesSelect();renderAll();
   toast(`Series created (${uids.length} samples). Switch Thermal to Series if needed.`);
+}
+/** Auto-build thermal series from ALBA scan groups — one series per DETECTOR × scan
+    group (option A). Members ordered by acquisition time (measStart), falling back to
+    natural filename order. Named "SAXS·iso_1" / "WAXS·ramp_up_1" (Pilatus→SAXS,
+    Rayonix→WAXS). Idempotent by name (re-run refreshes membership). Loaded samples only
+    (series reference sampleUids). To filter the DB to one of these, use Tags=<scan> +
+    Instrument=<detector> — the same split. */
+function createSeriesFromScans(){
+  const alba=samples.filter(s=>isAlbaFrameName(s.rawName||s.name));
+  if(!alba.length){toast('No ALBA scan samples loaded (plot them first)');return;}
+  const {keyTag}=albaScanTagMap(alba.map(s=>s.rawName||s.name));
+  const groups=new Map();
+  alba.forEach(s=>{
+    const nm=s.rawName||s.name;
+    const det=(nm.match(/^(pilatus|rayonix)/i)||[,''])[1].toLowerCase();
+    const {groupKey}=albaScanParts(nm);
+    const key=det+'|'+groupKey;
+    if(!groups.has(key))groups.set(key,{det,groupKey,members:[]});
+    groups.get(key).members.push(s);
+  });
+  const timeMs=s=>{
+    if(s.timeStart instanceof Date)return s.timeStart.getTime();
+    if(s.thermalTimeStartOverride){const d=new Date(s.thermalTimeStartOverride);if(!isNaN(d.getTime()))return d.getTime();}
+    return NaN;
+  };
+  const detLabel=d=>d==='pilatus'?'SAXS':(d==='rayonix'?'WAXS':(d||'?'));
+  const sorted=[...groups.values()].sort((a,b)=>a.det!==b.det?(a.det<b.det?-1:1):albaScanKeyCmp(a.groupKey,b.groupKey));
+  let created=0,updated=0,firstId=null;
+  sorted.forEach(g=>{
+    const ordered=g.members.slice().sort((a,b)=>{
+      const ta=timeMs(a),tb=timeMs(b);
+      if(Number.isFinite(ta)&&Number.isFinite(tb)&&ta!==tb)return ta-tb;
+      return naturalCompare({name:a.rawName||a.name},{name:b.rawName||b.name});
+    });
+    const uids=ordered.map(s=>s.sampleUid);
+    const name=`${detLabel(g.det)}·${keyTag[g.groupKey]||g.groupKey}`;
+    const existing=thermalSeriesList.find(t=>t.name===name);
+    let id;
+    if(existing){existing.memberUids=uids;id=existing.id;updated++;}
+    else{id=newSampleUid();thermalSeriesList.push({id,name,folderPath:'',memberUids:uids});created++;}
+    if(firstId==null)firstId=id;
+  });
+  if(firstId!=null)activeThermalSeriesId=firstId;
+  thermalViewMode='series';
+  updateThermalModeButtons();renderThermalSeriesSelect();renderAll();
+  toast(`Series from scans: ${created} created${updated?`, ${updated} updated`:''} (${sorted.length} scan group(s))`);
 }
 function setXrdLegend(i,v){samples[i].xrdLegendLabel=v;redrawXrd();renderCombineSamplePicker();}
 function setXrdColor(i,v){samples[i].color=v;redrawXrd();renderXrdTraceList();}
@@ -4481,6 +4580,7 @@ function legendPartValue(s,partId){
   }
   if(partId==='instrument')return dbFileInstrument(meta)||'';
   if(partId==='site')return dbFileSite(meta)||'';
+  if(partId==='tags'){const t=dbFileTags(meta);return (t&&t.length)?t.join(', '):'';}
   if(partId==='filename'){
     if(s.rawName!=null&&String(s.rawName).trim())return String(s.rawName).trim();
     return s.name!=null?String(s.name).trim():'';
@@ -4780,6 +4880,40 @@ function groupBasketState(ids) {
   if (inCount === 0) return "none";
   if (inCount === ids.length) return "all";
   return "some";
+}
+
+/* Files passing the current DB filter row. Mirrors the predicate inside
+   renderDbFileList — keep the two in sync if the filter fields change. */
+function dbFileMatchesFilter(f){
+  const {text,tags,tempMin,tempMax,instrument,site}=dbFileFilter;
+  if(text){
+    const name=(f.name||'').toLowerCase();
+    const lbl=dbFileSampleLabel(f).toLowerCase();
+    const inst=dbFileInstrument(f).toLowerCase();
+    const st=dbFileSite(f).toLowerCase();
+    if(!name.includes(text)&&!lbl.includes(text)&&!inst.includes(text)&&!st.includes(text))return false;
+  }
+  if(tags&&tags.length){
+    const ft=dbFileTags(f).map(x=>x.toLowerCase());
+    if(!tags.every(tag=>ft.some(t=>t.includes(tag))))return false;
+  }
+  if(tempMin!==''){const T=dbFileTempC(f);if(!Number.isFinite(T)||T<tempMin)return false;}
+  if(tempMax!==''){const T=dbFileTempC(f);if(!Number.isFinite(T)||T>tempMax)return false;}
+  if(instrument){const v=dbFileInstrument(f);if(instrument===DB_FILTER_NONE?v!=='':v!==instrument)return false;}
+  if(site){const v=dbFileSite(f);if(site===DB_FILTER_NONE?v!=='':v!==site)return false;}
+  return true;
+}
+function dbFilteredFiles(){return (dbFiles||[]).filter(dbFileMatchesFilter);}
+
+/* Stage (or unstage) every currently-filtered DB file into the first basket in one
+   click — the top-level bulk action complementing the per-group tree checkboxes. */
+function selectFilteredToBasket(add){
+  const ids=dbFilteredFiles().map(f=>f&&f.id).filter(id=>id!=null);
+  if(!ids.length){toast('No files match the current filter');return;}
+  if(add){ids.forEach(id=>{if(!firstBasket.includes(id))firstBasket.push(id);firstBasketExcluded.delete(id);});}
+  else{const drop=new Set(ids);firstBasket=firstBasket.filter(id=>!drop.has(id));ids.forEach(id=>firstBasketExcluded.delete(id));}
+  renderFirstBasket();renderDbFileList();
+  toast(`${add?'Added':'Removed'} ${ids.length} file(s) ${add?'to':'from'} basket`);
 }
 
 
