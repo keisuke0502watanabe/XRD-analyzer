@@ -351,6 +351,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <button class="btn" id="dbBulkEditBtn" onclick="openDbBulkEditModal()" disabled title="Edit metadata for every file in the basket">Bulk edit basket</button>
             <button class="btn" id="dbBulkClearBtn" onclick="clearFirstBasket()" disabled>Clear basket</button>
             <button class="btn" onclick="autoTagAlbaScans({toast:true})" title="Tag ALBA frames by scan name: iso_1, ramp_up_2, … (both detectors share the tag)">Auto-tag: scan name</button>
+            <button class="btn" onclick="backfillFolderPaths()" title="Fill folder/path from each file's header (# --> …) so old records become filterable by path">Fill paths</button>
           </div>
         </div>
         <div class="db-filter-row" id="dbFilterRow">
@@ -884,7 +885,7 @@ const INSTRUMENT_PRESETS=['Rigaku SmartLab','Anton Paar','ALBA Rayonix (WAXD)','
 const SITE_PRESETS=['FU','UB CCiTUB','ALBA'];
 const INSTRUMENT_ALIASES=[[/rigaku|smart\s*lab/i,'Rigaku SmartLab'],[/anton\s*paar|xrdynamic/i,'Anton Paar']];
 const DB_FILTER_NONE='__unset__';   // sentinel: "only files with this field unset"
-const DB_TREE_FIELDS=['sample','measStartDate','measStart','temp','instrument','site','filename','tags','capillary','measEnd','measTime','date'];
+const DB_TREE_FIELDS=['sample','folder','measStartDate','measStart','temp','instrument','site','filename','tags','capillary','measEnd','measTime','date'];
 let dbTreeOrder=['sample','measStart','temp'];
 const DB_TREE_MAX_LEVELS=5;
 const DB_TREE_MIN_LEVELS=1;
@@ -1185,6 +1186,19 @@ function normalizeFolderPath(p){
   if(p==null||String(p).trim()==='')return'';
   return String(p).trim().replace(/\\/g,'/').replace(/\/+/g,'/').replace(/^\/+|\/+$/g,'');
 }
+/** Acquisition folder from a pyFAI .dat "# --> /abs/path/file.dat" header line, trimmed
+    to a readable relative path (after PROCESSED/RAW/DATA, else the last 4 segments).
+    Returns '' when the text has no such line. Lets loaded files be filtered/grouped by
+    their original scan folder (e.g. "KEI/C8TAG/3/LaVue1D"). */
+function extractSourceFolder(text){
+  if(typeof text!=='string')return'';
+  const m=text.match(/^#\s*-->\s*(.+?)\s*$/m);
+  if(!m)return'';
+  const dir=m[1].replace(/\\/g,'/').replace(/\/[^/]*$/,'');
+  const cut=dir.match(/\/PROCESSED\/(.+)$/i)||dir.match(/\/RAW\/(.+)$/i)||dir.match(/\/DATA\/(.+)$/i);
+  const rel=cut?cut[1]:dir.split('/').filter(Boolean).slice(-4).join('/');
+  return normalizeFolderPath(rel);
+}
 /** Group DB rows by folderPath; sort folders path-wise then items by name. */
 function groupDbRecordsByFolder(records,folderKey='folderPath'){
   if(!Array.isArray(records))return[];
@@ -1394,6 +1408,20 @@ function getEffectiveThermal(s){
   if(!Number.isFinite(T))return null;
   if(t1.getTime()<=t0.getTime())return null;
   return{t0,t1,T0:T,T1:T};
+}
+/** Thermal (time,temp) datum for a sample, tolerant of point measurements. Returns
+    getEffectiveThermal's full window when available; otherwise, for ALBA-style frames
+    that carry only a measStart + temperature (no measEnd), a zero-width POINT so a
+    scan still forms a thermal-history curve / I(2θ) point. Null when neither exists.
+    Kept separate from getEffectiveThermal so segment/ramp code still sees only real
+    windows (a zero-width measurement bar there would be meaningless). */
+function thermalPointOrWindow(s){
+  const e=getEffectiveThermal(s);
+  if(e)return e;
+  const t0=s.thermalTimeStartOverride?new Date(s.thermalTimeStartOverride):s.timeStart;
+  const T=sampleThermalTempC(s);
+  if(t0 instanceof Date&&!isNaN(t0.getTime())&&Number.isFinite(T))return{t0,t1:t0,T0:T,T1:T};
+  return null;
 }
 function segmentUiForKind(s,kind){
   const m=(s.segments||[]).find(x=>x.segType===kind||x.kind===kind);
@@ -1859,7 +1887,7 @@ function buildSimpleThermalPolyline(sampleList){
   const effs=[];
   (sampleList||[]).forEach(s=>{
     if(s.visible===false)return;
-    const e=getEffectiveThermal(s);
+    const e=thermalPointOrWindow(s);
     if(e)effs.push({t0:e.t0.getTime(),t1:e.t1.getTime(),T:e.T0,color:s.color||'#4a9eff'});
   });
   if(!effs.length)return{pts:[],pointColors:[]};
@@ -2647,6 +2675,22 @@ function parseAny(file,textOrBuffer){
    File loading
    ===================================================================== */
 
+/** Fast 53-bit content hash (cyrb53) — used to detect duplicates by CONTENT so files
+    that merely share a name (e.g. the same frame index from a different ALBA scan) are
+    still loaded. Not cryptographic; collision risk is negligible for this use. */
+function quickHash(str){
+  str=String(str);
+  let h1=0xdeadbeef,h2=0x41c6ce57;
+  for(let i=0;i<str.length;i++){
+    const ch=str.charCodeAt(i);
+    h1=Math.imul(h1^ch,2654435761);
+    h2=Math.imul(h2^ch,1597334677);
+  }
+  h1=Math.imul(h1^(h1>>>16),2246822507);h1^=Math.imul(h2^(h2>>>13),3266489909);
+  h2=Math.imul(h2^(h2>>>16),2246822507);h2^=Math.imul(h1^(h1>>>13),3266489909);
+  return (h2>>>0).toString(36)+'-'+(h1>>>0).toString(36);
+}
+
 function finishRasBatch(pendingRef){
   if(--pendingRef.n>0)return;
   ensureSampleDisplayOrders();
@@ -2688,8 +2732,8 @@ function handleFiles(fileList){
   /* Derive per-frame acquisition time from the ALBA .dat mtimes before reading contents,
      so processOne can stamp measurementStart (incl. batch-processed sibling detectors). */
   buildAlbaFrameTimeMap(list);
-  const batchClaimed=new Set(); /* names claimed during this batch, to guard the parallel-read dup race */
-  let existingDbNames=new Set(); /* snapshot of DB names, taken once before the batch (not per file) */
+  const batchClaimed=new Set(); /* name hash keys claimed this batch, to guard the parallel-read dup race */
+  const existingKeys=new Set(); /* name hash (text) / "N:"+name (HDF5) of records already in the DB */
   /* Read one file as ArrayBuffer (HDF5) or text; resolves with the result or rejects with the error. */
   const readFileAs=(f,asBuffer,encoding)=>new Promise((resolve,reject)=>{
     const r=new FileReader();
@@ -2714,11 +2758,17 @@ function handleFiles(fileList){
          or already claimed earlier in THIS batch. The batch claim is synchronous (no
          await between the check and the add), so two parallel reads of the same name
          can't both slip past and double-write. */
-      const alreadyInMemory=samples.some(s=>s.rawName===f.name);
-      if(alreadyInMemory||batchClaimed.has(f.name)||existingDbNames.has(f.name)){
-        toast(`Skipped: "${f.name}" is already loaded`);return;
+      /* Content-aware: a file is a duplicate only when its name AND content both match.
+         Same name + different content (e.g. the same frame index from another ALBA scan)
+         loads as a separate record. HDF5 (ArrayBuffer) falls back to name-only. */
+      const contentHash=(typeof raw==='string')?quickHash(raw):null;
+      const dupKey=contentHash!=null?(f.name+' '+contentHash):('N:'+f.name);
+      const alreadyInMemory=samples.some(s=>s.rawName===f.name&&(contentHash==null||s.contentHash===contentHash));
+      if(alreadyInMemory||batchClaimed.has(dupKey)||existingKeys.has(dupKey)){
+        toast(`Skipped: "${f.name}" (identical file already loaded)`);return;
       }
-      batchClaimed.add(f.name);
+      batchClaimed.add(dupKey);
+      p.contentHash=contentHash;
       p.color=COLORS[(samples.length+idx)%COLORS.length];
       ensureSampleThermal(p);
       assignNewSampleDisplayOrder(p);
@@ -2749,7 +2799,10 @@ function handleFiles(fileList){
       const siteForDb=normalizeSite(p.meta?.site);
       const lambdaForDb=Number.isFinite(+p.meta?.lambda)?(+p.meta.lambda):null;
       const rawText=isHDF5?('__HDF5_BASE64__'+bytesToBase64(new Uint8Array(raw))):raw;
-      const dbPayload={name:f.name,rawText,rowCount:p.tth.length,folderPath:'',tempC:tempCForDb,sampleLabel:'',tags:[],instrument:instrumentForDb,site:siteForDb,lambdaA:lambdaForDb,capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null};
+      /* Original scan folder from the .dat header (# --> …) so files stay filterable/
+         groupable by acquisition path even after the local filename loses that context. */
+      const folderForDb=(typeof raw==='string')?extractSourceFolder(raw):'';
+      const dbPayload={name:f.name,rawText,contentHash,rowCount:p.tth.length,folderPath:folderForDb,tempC:tempCForDb,sampleLabel:'',tags:[],instrument:instrumentForDb,site:siteForDb,lambdaA:lambdaForDb,capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null};
       p.meta=p.meta||{};
       p.meta.instrument=instrumentForDb;
       try{const newId=await adapter.saveFile(dbPayload);if(newId!=null)p.dbId=newId;}
@@ -2761,7 +2814,23 @@ function handleFiles(fileList){
      on large drops — WebKit surfaces that as a read failure (legacy FileError code 5).
      A bounded pool keeps only a few reads in flight at a time. */
   (async()=>{
-    try{const existing=await adapter.listFiles();existingDbNames=new Set(existing.map(x=>x&&x.name));}catch(_e){}
+    try{
+      const existing=await adapter.listFiles();
+      const incomingNames=new Set(list.map(f=>f.name));
+      existing.forEach(r=>{
+        if(!r||!r.name)return;
+        const isH=typeof r.rawText==='string'&&r.rawText.startsWith('__HDF5_BASE64__');
+        if(isH){existingKeys.add('N:'+r.name);return;}
+        let h=r.contentHash;
+        if(h==null){
+          /* Legacy record saved before content hashing: hash its stored text on the fly,
+             but only when its name could actually collide with something in this drop. */
+          if(!incomingNames.has(r.name)||typeof r.rawText!=='string')return;
+          h=quickHash(r.rawText);
+        }
+        existingKeys.add(r.name+' '+h);
+      });
+    }catch(_e){}
     let cursor=0;
     const POOL=Math.min(4,list.length);
     const worker=async()=>{while(cursor<list.length){const i=cursor++;await processOne(list[i],i);}};
@@ -2979,6 +3048,9 @@ function applyXrdChartSettingsToDom(s){
   syncXrdChartHeight();
 }
 function xrdMetaRecordForSample(s){
+  /* Resolve by DB id first: with content-aware dedup several records can share a name,
+     so a name lookup could return the wrong one's metadata. */
+  if(s&&s.dbId!=null){const byId=(dbFiles||[]).find(f=>f&&f.id===s.dbId);if(byId)return byId;}
   const keyName=(s?.rawName&&String(s.rawName).trim())||(s?.name&&String(s.name).trim())||'';
   const rec=(dbFiles||[]).find(f=>String(f?.name||'').trim()===keyName);
   if(rec)return rec;
@@ -3341,7 +3413,7 @@ function redrawIvsTime(){
   const vis=xrdVisibleSamples();
   const pts=[];
   vis.forEach(s=>{
-    const eff=getEffectiveThermal(s);
+    const eff=thermalPointOrWindow(s);
     if(!eff||!s.tth?.length)return;
     const y=interpolateIntensityAt(s.tth,s.intensity,thetaVal);
     if(!Number.isFinite(y))return;
@@ -4665,6 +4737,7 @@ function normalizeTags(value){
 function dbFileTags(f){
   return normalizeTags(f?.tags);
 }
+function dbFileFolderPath(f){return normalizeFolderPath(f?.folderPath);}
 function dbFileDateKey(f){
   const t=new Date(f?.savedAt||0).getTime();
   if(!Number.isFinite(t)||t<=0)return'Unknown date';
@@ -4691,6 +4764,7 @@ function dbTreeLabel(field,f){
   }
   if(field==='instrument')return dbFileInstrument(f)||'Unknown instrument';
   if(field==='site')return dbFileSite(f)||'Unknown site';
+  if(field==='folder')return dbFileFolderPath(f)||'(no path)';
   if(field==='filename')return f?.name||'(no name)';
   if(field==='tags'){const t=dbFileTags(f);return (t&&t.length)?t.join(', '):'Untagged';}
   if(field==='measStartDate'){const iso=dbFileMeasurementStartIso(f);if(!iso)return 'Unknown date';const d=new Date(iso);return isNaN(d.getTime())?'Unknown date':d.toLocaleDateString();}
@@ -4706,12 +4780,13 @@ function dbTreeSortValue(field,f){
   if(field==='temp'){const t=dbFileTempC(f);return Number.isFinite(t)?t:Infinity;}
   if(field==='instrument')return (dbFileInstrument(f)||'~~~').toLowerCase();
   if(field==='site')return (dbFileSite(f)||'~~~').toLowerCase();
+  if(field==='folder')return (dbFileFolderPath(f)||'~~~').toLowerCase();
   if(field==='filename')return (f?.name||'').toLowerCase();
   if(field==='tags'){const t=dbFileTags(f);return (t&&t.length)?t.join(',').toLowerCase():'~~~';}
   if(field==='measStartDate'){const iso=dbFileMeasurementStartIso(f);if(!iso)return Infinity;const d=new Date(iso);return isNaN(d.getTime())?Infinity:new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();}
   return '';
 }
-const DB_TREE_LABELS={sample:'Sample',measStartDate:'Meas. start date',measStart:'Meas. start',temp:'Temperature',instrument:'Instrument',site:'Site',filename:'Filename',tags:'Tags',capillary:'Capillary',measEnd:'Meas. end',measTime:'Meas. time',date:'Date'};
+const DB_TREE_LABELS={sample:'Sample',folder:'Folder / path',measStartDate:'Meas. start date',measStart:'Meas. start',temp:'Temperature',instrument:'Instrument',site:'Site',filename:'Filename',tags:'Tags',capillary:'Capillary',measEnd:'Meas. end',measTime:'Meas. time',date:'Date'};
 /** Render one <select> per active grouping level (default 3; add/remove up to DB_TREE_MAX_LEVELS). */
 function initDbTreeOrderUi(){
   const host=document.getElementById('dbTreeLevels');
@@ -4727,6 +4802,18 @@ function initDbTreeOrderUi(){
 function refreshTreesAfterOrderChange(){
   renderDbFileList();
   if(typeof renderXrdTraceList==='function'){try{renderXrdTraceList();}catch(_e){}}
+  /* Persist the grouping order to the DB so it becomes the default next session. */
+  try{adapter.setState(DB_TREE_ORDER_KEY,[...dbTreeOrder]);}catch(_e){}
+}
+const DB_TREE_ORDER_KEY='xrd_db_tree_order';
+/** Restore the saved DB tree grouping order (appState) into dbTreeOrder before the UI
+    is first built. Keeps only currently-valid fields, clamped to the level bounds. */
+async function loadDbTreeOrder(){
+  try{
+    const rec=await adapter.getState(DB_TREE_ORDER_KEY);
+    const saved=rec&&Array.isArray(rec.value)?rec.value.filter(f=>DB_TREE_FIELDS.includes(f)):[];
+    if(saved.length)dbTreeOrder=saved.slice(0,DB_TREE_MAX_LEVELS);
+  }catch(_e){}
 }
 function applyDbTreeOrder(){
   const picked=dbTreeOrder.map((_f,idx)=>document.getElementById('dbTreeLevel'+(idx+1))?.value).filter(Boolean);
@@ -4891,7 +4978,8 @@ function dbFileMatchesFilter(f){
     const lbl=dbFileSampleLabel(f).toLowerCase();
     const inst=dbFileInstrument(f).toLowerCase();
     const st=dbFileSite(f).toLowerCase();
-    if(!name.includes(text)&&!lbl.includes(text)&&!inst.includes(text)&&!st.includes(text))return false;
+    const fp=dbFileFolderPath(f).toLowerCase();
+    if(!name.includes(text)&&!lbl.includes(text)&&!inst.includes(text)&&!st.includes(text)&&!fp.includes(text))return false;
   }
   if(tags&&tags.length){
     const ft=dbFileTags(f).map(x=>x.toLowerCase());
@@ -4914,6 +5002,23 @@ function selectFilteredToBasket(add){
   else{const drop=new Set(ids);firstBasket=firstBasket.filter(id=>!drop.has(id));ids.forEach(id=>firstBasketExcluded.delete(id));}
   renderFirstBasket();renderDbFileList();
   toast(`${add?'Added':'Removed'} ${ids.length} file(s) ${add?'to':'from'} basket`);
+}
+
+/** Fill folderPath on existing cached records that lack it, extracting the scan folder
+    from each record's stored header (# --> …). Lets records loaded before path capture
+    become filterable/groupable by path without re-dropping the files. */
+async function backfillFolderPaths(){
+  const recs=(await adapter.listFiles().catch(()=>dbFiles))||[];
+  let n=0;
+  for(const r of recs){
+    if(!r||r.id==null||typeof r.rawText!=='string')continue;
+    if(normalizeFolderPath(r.folderPath))continue;
+    const fp=extractSourceFolder(r.rawText);
+    if(!fp)continue;
+    try{await adapter.saveFile({...r,id:r.id,folderPath:fp});n++;}catch(_e){}
+  }
+  if(n){dbFiles=(await adapter.listFiles().catch(()=>dbFiles))||dbFiles;try{renderDbFileList();renderFirstBasket();}catch(_e){}}
+  toast(n?`Filled folder path on ${n} file(s)`:'No paths to fill (headers have no "# --> " line)');
 }
 
 
@@ -4967,7 +5072,8 @@ function renderDbFileList(){
       const lbl=dbFileSampleLabel(f).toLowerCase();
       const inst=dbFileInstrument(f).toLowerCase();
       const st=dbFileSite(f).toLowerCase();
-      if(!name.includes(text)&&!lbl.includes(text)&&!inst.includes(text)&&!st.includes(text))return false;
+      const fp=dbFileFolderPath(f).toLowerCase();
+      if(!name.includes(text)&&!lbl.includes(text)&&!inst.includes(text)&&!st.includes(text)&&!fp.includes(text))return false;
     }
     if(tags&&tags.length){
       const ft=dbFileTags(f).map(x=>x.toLowerCase());
@@ -6386,6 +6492,7 @@ document.getElementById('dbIn').addEventListener('change',e=>{const f=e.target.f
 
 (async()=>{
   runEnvironmentChecks();
+  await loadDbTreeOrder();
   initDbTreeOrderUi();
   updateXaxisModeUi();
   const savedTheme=localStorage.getItem('xrd_th_theme');
