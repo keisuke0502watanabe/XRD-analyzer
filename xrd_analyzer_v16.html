@@ -2288,6 +2288,33 @@ async function autoTagAlbaScans(opts){
   return n;
 }
 
+/** Backfill mtime-derived measurementStart onto cached ALBA records (and loaded
+    samples) that lack it, using albaFrameTimeMap from the current drop. This lets a
+    RE-DROP of the folder stamp dates onto records that were saved before the frame-
+    time feature existed (those got skipped as duplicates, so processOne never ran).
+    Only fills when the time is missing — never overwrites a user-set/ExpEnv time. */
+async function applyAlbaFrameTimes(){
+  if(!Object.keys(albaFrameTimeMap).length)return 0;
+  const recs=(await adapter.listFiles().catch(()=>dbFiles))||[];
+  let n=0;
+  for(const rec of recs){
+    if(!rec||rec.id==null||!isAlbaFrameName(rec.name)||rec.measurementStartIso)continue;
+    const ft=albaFrameTimeMap[albaFrameKey(rec.name)];
+    if(!Number.isFinite(ft))continue;
+    const d=new Date(ft);if(isNaN(d.getTime()))continue;
+    try{await adapter.saveFile({...rec,id:rec.id,measurementStartIso:d.toISOString()});n++;}catch(_e){}
+  }
+  for(const s of samples){
+    if(!(s.meta&&s.meta.albaQ)||s.timeStart instanceof Date)continue;
+    const ft=albaFrameTimeMap[albaFrameKey(s.rawName||s.name)];
+    if(!Number.isFinite(ft))continue;
+    const d=new Date(ft);if(isNaN(d.getTime()))continue;
+    s.timeStart=d;s.thermalTimeStartOverride=d.toISOString();
+  }
+  if(n){dbFiles=(await adapter.listFiles().catch(()=>dbFiles))||dbFiles;try{renderDbFileList();renderFirstBasket();renderAll();}catch(_e){}}
+  return n;
+}
+
 /** PANalytical XRDML (XML) — wavelength + timestamps + sample name */
 function parseXRDML(text,fname){
   let doc;
@@ -2615,6 +2642,10 @@ function finishRasBatch(pendingRef){
     /* When .dat and ExpEnv were dropped in the same batch, re-stamp once everything is saved
        so late-parsed patterns still pick up their temperature regardless of read order. */
     if(Object.keys(albaExpEnvMap).length)await applyAlbaExpEnv(null);
+    /* Backfill mtime dates onto records that predate the frame-time feature (a re-drop
+       reaches this even though the .dat itself was skipped as a duplicate). */
+    const nT=await applyAlbaFrameTimes();
+    if(nT)toast(`Meas. start: dated ${nT} existing record(s) from file mtime`);
     /* Auto-tag ALBA frames by scan name (iso_1, ramp_up_2, …); no-op for non-ALBA batches. */
     await autoTagAlbaScans();
   }).catch(err=>{console.error(err);toast('DB: '+(err.message||err));});
