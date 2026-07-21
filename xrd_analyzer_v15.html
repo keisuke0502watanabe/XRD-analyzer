@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>XRD Analyzer DB TH v15</title>
+<title>XRD Analyzer v15</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
@@ -253,16 +253,71 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
 .modal{background:var(--bg2);border:1px solid var(--border);border-radius:8px;min-width:320px;padding:1rem}
 .txt{width:100%;font-size:12px;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);margin-bottom:.55rem}
 @media (max-width:1000px){.layout.lr{grid-template-columns:1fr}}
+/* ===== v15 TAB LAYOUT (replaces the old scrolling single-column shell) ===== */
+.tabbar{display:flex;align-items:stretch;gap:2px;padding:5px 8px 0;background:var(--bg2);border-bottom:1px solid var(--border);overflow-x:auto;overflow-y:hidden;flex:0 0 auto;scrollbar-width:thin}
+.tabbar .tab{white-space:nowrap;border:1px solid transparent;border-bottom:none;background:transparent;color:var(--text2);padding:6px 15px;font-size:12px;border-radius:7px 7px 0 0;cursor:pointer;line-height:1.2}
+.tabbar .tab:hover{background:var(--bg3);color:var(--text)}
+.tabbar .tab.active{background:var(--bg);color:var(--text);border-color:var(--border);font-weight:600}
+.tabpanes{flex:1 1 auto;min-height:0;overflow:auto;background:var(--bg)}
+.tabpane{display:none;padding:.8rem}
+.tabpane.active{display:block}
+.tabpane.pane-flush{padding:.6rem}
+/* DB tab: the dock (already a horizontal column strip in "top" mode) fills the pane */
+#pane-db{flex-direction:column;gap:9px;height:100%}
+#pane-db.active{display:flex}
+#pane-db .db-pane-drop{flex:0 0 auto;padding:.7rem 1rem}
+#pane-db .db-dock{position:static;flex:1;min-height:0;width:100%;height:auto;max-height:none;border:none;background:transparent}
+#pane-db .db-dock-body{height:100%;min-height:0}
+#pane-db .db-dock-col{border:1px solid var(--border);border-radius:8px;background:var(--bg2)}
+/* Thermal & Patterns fill the pane so the chart uses the freed vertical space */
+#pane-thermal{height:100%}
+#pane-thermal #thermalPanel{height:100%;display:flex;flex-direction:column}
+#pane-thermal #thermalPanel>.panel-body{flex:1;min-height:0}
+#pane-thermal #thermalPanel .canvas-box-sm{height:auto;flex:1;min-height:260px}
+#pane-patterns #combinePanel{height:100%;display:flex;flex-direction:column}
+#pane-patterns #combinePanel>.panel-body{flex:1;min-height:0;overflow:auto}
 </style>
 </head>
 <body>
-<div class="app db-layout-sidebar" id="appRoot">
-  <aside class="db-dock" id="dbDock">
-    <div class="db-dock-toolbar">
-      <span class="title">DB &amp; Projects</span>
-      <label class="db-dock-layout">Panel<select class="dbPanelLayoutSelect" onchange="setDbPanelLayout(this.value)"><option value="sidebar">Sidebar</option><option value="top">Top</option></select></label>
+<div class="app db-layout-top" id="appRoot">
+  <div class="main">
+    <div id="appNotice" class="app-notice" role="status" aria-live="polite"></div>
+    <div class="topbar">
+      <span class="brand">XRD Analyzer v15</span>
+      <div class="sep"></div>
+      <button class="btn" onclick="document.getElementById('fileIn').click()">Load Files</button>
+      <button class="btn" onclick="openSaveModal()">Save Project</button>
+      <button class="btn" onclick="exportProjectJson()">Export JSON</button>
+      <button class="btn" onclick="document.getElementById('projectIn').click()">Import JSON</button>
+      <button class="btn" onclick="exportDataJson()">Export Data</button>
+      <button class="btn" id="themeToggleBtn" onclick="toggleTheme()">Theme: White</button>
+      <div class="sep"></div>
+      <button class="btn" onclick="exportThermalChart('png')">Thermal PNG</button>
+      <button class="btn" onclick="exportThermalChart('pdf')">Thermal PDF</button>
+      <button class="btn" onclick="exportCombineChart('png')">Combine PNG</button>
+      <button class="btn" onclick="exportCombineChart('pdf')">Combine PDF</button>
+      <input type="file" id="fileIn" accept=".ras,.scn,.xrdml,.hdf5" multiple style="display:none">
+      <input type="file" id="projectIn" accept=".json" style="display:none">
+      <input type="file" id="dataIn" accept=".json" style="display:none">
+      <input type="file" id="dbIn" accept=".json" style="display:none">
     </div>
-    <div class="db-dock-body">
+
+    <nav class="tabbar" id="tabBar">
+      <button class="tab active" data-tab="db" onclick="setActiveTab('db')">DB &amp; Projects</button>
+      <button class="tab" data-tab="thermal" onclick="setActiveTab('thermal')">Thermal History</button>
+      <button class="tab" data-tab="patterns" onclick="setActiveTab('patterns')">Patterns</button>
+      <button class="tab" data-tab="samples" onclick="setActiveTab('samples')">Samples</button>
+    </nav>
+
+    <div class="tabpanes" id="tabPanes">
+
+    <!-- ===== DB & PROJECTS TAB ===== -->
+    <section class="tabpane pane-flush active" data-pane="db" id="pane-db">
+      <div id="dropZone" class="drop-zone db-pane-drop">
+        Drag &amp; drop <code>.ras</code> / <code>.scn</code> / <code>.xrdml</code> / <code>.hdf5</code> files here, or click to select
+      </div>
+      <aside class="db-dock" id="dbDock">
+        <div class="db-dock-body">
       <div class="db-dock-col db-col-files">
         <div class="section">
           <div class="title">DB File Cache</div>
@@ -342,45 +397,12 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
         </div>
         <div id="dbThermalSeriesList" class="db-list db-list--scroll" style="max-height:min(220px,40vh);min-height:72px"><div class="empty">No saved series</div></div>
       </div>
-    </div>
-    <div class="db-dock-resizer" id="dbDockResizer" title="Drag to resize the DB panel"></div>
-  </aside>
-
-  <div class="main">
-    <div id="appNotice" class="app-notice" role="status" aria-live="polite"></div>
-    <div class="topbar">
-      <span class="brand">XRD Analyzer DB TH v15</span>
-      <label class="db-dock-layout" style="margin-right:4px">DB panel<select class="dbPanelLayoutSelect" onchange="setDbPanelLayout(this.value)"><option value="sidebar">Sidebar</option><option value="top">Top</option></select></label>
-      <div class="sep"></div>
-      <button class="btn" onclick="document.getElementById('fileIn').click()">Load Files</button>
-      <button class="btn" onclick="openSaveModal()">Save Project</button>
-      <button class="btn" onclick="exportProjectJson()">Export JSON</button>
-      <button class="btn" onclick="document.getElementById('projectIn').click()">Import JSON</button>
-      <button class="btn" onclick="exportDataJson()">Export Data</button>
-      <button class="btn" id="themeToggleBtn" onclick="toggleTheme()">Theme: White</button>
-      <div class="sep"></div>
-      <button class="btn" onclick="exportThermalChart('png')">Thermal PNG</button>
-      <button class="btn" onclick="exportThermalChart('pdf')">Thermal PDF</button>
-      <button class="btn" onclick="exportCombineChart('png')">Combine PNG</button>
-      <button class="btn" onclick="exportCombineChart('pdf')">Combine PDF</button>
-      <input type="file" id="fileIn" accept=".ras,.scn,.xrdml,.hdf5" multiple style="display:none">
-      <input type="file" id="projectIn" accept=".json" style="display:none">
-      <input type="file" id="dataIn" accept=".json" style="display:none">
-      <input type="file" id="dbIn" accept=".json" style="display:none">
-    </div>
-
-    <div class="content">
-      <div class="panel">
-        <div class="panel-body">
-          <div id="dropZone" class="drop-zone">
-            Drag &amp; drop <code>.ras</code> / <code>.scn</code> / <code>.xrdml</code> / <code>.hdf5</code> files here, or click to select
-          </div>
         </div>
-      </div>
+      </aside>
+    </section>
 
-      <div class="samples-charts-col">
-        <div class="charts-column">
-      <div id="mainLayout" class="layout">
+    <!-- ===== THERMAL HISTORY TAB ===== -->
+    <section class="tabpane" data-pane="thermal" id="pane-thermal">
         <div class="panel" id="thermalPanel">
           <div class="panel-head">
             <span class="panel-title">Thermal History</span>
@@ -410,8 +432,10 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <canvas id="thermalCanvas"></canvas>
           </div>
         </div>
-      </div>
+    </section>
 
+    <!-- ===== PATTERNS TAB ===== -->
+    <section class="tabpane pane-flush" data-pane="patterns" id="pane-patterns">
       <div class="panel" id="combinePanel">
         <div class="panel-head">
           <div>
@@ -481,8 +505,10 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
           </div>
         </div>
       </div>
-        </div>
-        <div class="samples-bottom">
+    </section>
+
+    <!-- ===== SAMPLES TAB ===== -->
+    <section class="tabpane" data-pane="samples" id="pane-samples">
           <div class="panel">
             <div class="panel-head">
               <span class="panel-title">Samples</span>
@@ -492,8 +518,8 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <div id="sampleList" class="sample-list"></div>
             </div>
           </div>
-        </div>
-      </div>
+    </section>
+
     </div>
   </div>
 </div>
@@ -696,6 +722,25 @@ const openSampleThermalAcc=new Set();
 let samples=[];let xrdChart=null;let thermalChart=null;let outerChart=null;
 let _resizeTimer=0;
 function resizeAllCharts(){[xrdChart,thermalChart,outerChart,basketParentChart].forEach(ch=>{try{ch&&ch.resize();}catch(e){}});}
+
+// ===== v15 TAB SWITCHING (DB / Thermal / Patterns / Samples) =====
+let activeTab=(()=>{try{return localStorage.getItem('xrd_active_tab')||'db';}catch(_e){return 'db';}})();
+function setActiveTab(id){
+  activeTab=id;try{localStorage.setItem('xrd_active_tab',id);}catch(_e){}
+  document.querySelectorAll('#tabBar .tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
+  document.querySelectorAll('#tabPanes .tabpane').forEach(p=>p.classList.toggle('active',p.dataset.pane===id));
+  // Chart.js can't size a canvas that was display:none. A single rAF sometimes
+  // fires before the newly-shown pane has laid out (canvas stays 0-wide), so
+  // resize on the next two frames and once more on a short timeout fallback.
+  const r=()=>{try{resizeAllCharts();}catch(_e){}};
+  requestAnimationFrame(()=>{r();requestAnimationFrame(r);});
+  setTimeout(r,90);
+}
+function initTabs(){
+  const ids=['db','thermal','patterns','samples'];
+  if(!ids.includes(activeTab))activeTab='db';
+  setActiveTab(activeTab);
+}
 window.addEventListener('resize',()=>{clearTimeout(_resizeTimer);_resizeTimer=setTimeout(resizeAllCharts,120);});
 let xrdMode='overlay',layout='tb',timeUnit='sec';
 let combineMode='overlay';
@@ -893,21 +938,21 @@ function setTheme(theme){
   try{localStorage.setItem('xrd_th_theme',uiTheme);}catch(_e){}
 }
 function toggleTheme(){setTheme(uiTheme==='dark'?'light':'dark');}
+// v15: the DB dock now lives inside the "DB" tab and is always laid out as a
+// horizontal column strip ("top" mode). The old sidebar/top toggle is gone, so
+// this is pinned to 'top' and ignores any legacy saved/imported value.
 function setDbPanelLayout(v){
-  dbPanelLayout=(v==='top')?'top':'sidebar';
+  dbPanelLayout='top';
   const root=document.getElementById('appRoot');
   if(root){
-    root.classList.remove('db-layout-sidebar','db-layout-top');
-    root.classList.add(dbPanelLayout==='top'?'db-layout-top':'db-layout-sidebar');
+    root.classList.remove('db-layout-sidebar');
+    root.classList.add('db-layout-top');
   }
-  document.querySelectorAll('.dbPanelLayoutSelect').forEach(el=>{el.value=dbPanelLayout;});
-  try{localStorage.setItem('xrd_th_db_panel_layout',dbPanelLayout);}catch(_e){}
   try{applyDockColGrows();}catch(_e){}
   setTimeout(()=>{try{resizeAllCharts();}catch(_e){}},0);
 }
 function initDbPanelLayout(){
-  const saved=localStorage.getItem('xrd_th_db_panel_layout');
-  setDbPanelLayout(saved==='top'?'top':'sidebar');
+  setDbPanelLayout('top');
 }
 function initDockResizer(){
   const dock=document.getElementById('dbDock');
@@ -3485,7 +3530,9 @@ function removeSample(i){
 function setScanRate(i,v){const n=parseFloat(v);samples[i].scanRate=isNaN(n)?null:n;refreshSegmentsForSample(samples[i]);renderAll();}
 function setTempSetPoint(i,v){setSampleThermalTemp(i,v);}
 function setRampStart(i,v){const n=parseFloat(v);samples[i].rampStartTemp=isNaN(n)?null:n;refreshSegmentsForSample(samples[i]);renderAll();}
-function setLayout(l){layout=l;const ml=document.getElementById('mainLayout');if(ml)ml.classList.toggle('lr',l==='lr');const xp=document.getElementById('xrdPanel');if(xp)xp.style.display=l==='thermal'?'none':'block';const tp=document.getElementById('thermalPanel');if(tp)tp.style.display=l==='xrd'?'none':'block';renderAll();}
+// v15: Thermal and Patterns are separate tabs now, so the old panel show/hide
+// (which could hide the thermal panel for a legacy layout==='xrd') is dropped.
+function setLayout(l){layout=l;renderAll();}
 function setXrdMode(m){xrdMode=m;redrawXrd();}
 function setCombineMode(m){combineMode=m;updateCombineModeButtons();redrawOuterChart();}
 function toggleXrdOffsetMode(){xrdOffsetMode=xrdOffsetMode==='equal'?'manual':'equal';updateXrdModeButtons();renderSampleList();redrawXrd();}
@@ -5016,8 +5063,8 @@ document.getElementById('dbIn').addEventListener('change',e=>{const f=e.target.f
   const savedTheme=localStorage.getItem('xrd_th_theme');
   setTheme(savedTheme==='dark'?'dark':'light');
   initDbPanelLayout();
-  initDockResizer();
   initDockColumns();
+  initTabs();
   initListDnd();
   if(typeof indexedDB==='undefined')toast('IndexedDB not available — DB cache disabled (private mode, etc.).');
   try{syncXrdChartHeight();syncOuterChartHeight();const src=document.getElementById('xrdSourceMode');if(src)src.value=xrdSourceMode;updateXaxisModeUi();updateCombineXaxisModeUi();updateXrdModeButtons();updateCombineModeButtons();}catch(e){console.error(e);}

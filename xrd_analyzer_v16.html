@@ -2056,14 +2056,21 @@ function _albaHeaderJson(lines){
   try{return JSON.parse(text.slice(start,end+1));}catch(_e){return null;}
 }
 
-/** ALBA BL11 NCD pyFAI 1D integration .dat: x = q (nm^-1), converted to 2θ via header λ.
-    Header JSON carries wavelength (m) and detector; columns are `q  I [ sigma]`. */
+/** ALBA λ ≈ 0.99987 Å (12.4 keV) on both detectors. By request the q→2θ conversion uses
+    exactly λ = 1.0 Å — detector-consistent (Rayonix .dat has NO poni-JSON wavelength, only
+    a "# Wavelength: … m" line) and just 0.013% off. */
+const ALBA_LAMBDA_A=1.0;
+/** ALBA BL11 NCD pyFAI 1D integration .dat: x = q (nm^-1), converted to 2θ with λ = 1.0 Å.
+    Columns are `q  I [ sigma]`. Detector comes from the poni JSON, else the header text /
+    filename (Rayonix .dat has no JSON block). */
 function parseAlbaDat(text,lines,fname){
   const j=_albaHeaderJson(lines);
-  let lambdaA=null,detector=null;
-  if(j){
-    if(Number.isFinite(+j.wavelength)&&+j.wavelength>0)lambdaA=(+j.wavelength)*1e10; // m → Å
-    if(j.detector)detector=String(j.detector);
+  let detector=(j&&j.detector)?String(j.detector):null;
+  if(!detector){
+    const hdr=lines.filter(l=>/^\s*#/.test(l)).join('\n');
+    const base=albaBaseName(fname);
+    if(/rayonix/i.test(hdr)||/^rayonix/i.test(base))detector='Rayonix';
+    else if(/pilatus/i.test(hdr)||/^pilatus/i.test(base))detector='Pilatus';
   }
   const q=[],inten=[];let sawSigma=false;
   for(const line of lines){
@@ -2075,17 +2082,12 @@ function parseAlbaDat(text,lines,fname){
     if(p.length>=3&&Number.isFinite(p[2]))sawSigma=true;
   }
   if(!q.length)return null;
-  const lamNm=(Number.isFinite(lambdaA)&&lambdaA>0)?lambdaA/10:null;
+  const lamNm=ALBA_LAMBDA_A/10;              // Å → nm (0.1 nm)
   const tth=[],intensity=[];
   for(let i=0;i<q.length;i++){
-    let x2;
-    if(lamNm){
-      const arg=q[i]*lamNm/(4*Math.PI);      // q = 4π·sinθ/λ  →  sinθ = q·λ/(4π)
-      if(Math.abs(arg)>1)continue;           // outside the physical range → skip
-      x2=2*Math.asin(arg)*180/Math.PI;
-    }else{
-      x2=q[i];                               // no λ in header: keep q as the x value
-    }
+    const arg=q[i]*lamNm/(4*Math.PI);        // q = 4π·sinθ/λ  →  sinθ = q·λ/(4π)
+    if(Math.abs(arg)>1)continue;             // outside the physical range → skip
+    const x2=2*Math.asin(arg)*180/Math.PI;
     if(!Number.isFinite(x2))continue;
     tth.push(x2);intensity.push(inten[i]);
   }
@@ -2096,13 +2098,11 @@ function parseAlbaDat(text,lines,fname){
   else if(/pilatus/i.test(det))instrument='ALBA Pilatus (SAXD)';
   else if(det)instrument='ALBA '+det;
   const s=_buildSample(fname.replace(/\.dat$/i,''),fname,tth,intensity,{
-    lambda:(Number.isFinite(lambdaA)&&lambdaA>0)?lambdaA:undefined,
-    instrument,detector:det||null,source:'synchrotron'
+    lambda:ALBA_LAMBDA_A,instrument,detector:det||null,source:'synchrotron'
   });
   s.meta.site='ALBA';
   s.meta.albaQ=true;            // originated as pyFAI q; enables the q display mode
   s.meta.hasSigma=sawSigma;
-  if(!lamNm)s.meta.albaNoLambda=true;
   return s;
 }
 
