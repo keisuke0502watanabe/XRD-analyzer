@@ -316,7 +316,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
       <button class="tab" data-tab="thermal" onclick="setActiveTab('thermal')">Thermal History</button>
       <button class="tab" data-tab="patterns" onclick="setActiveTab('patterns')">Patterns</button>
       <button class="tab" data-tab="samples" onclick="setActiveTab('samples')">Samples</button>
-      <button class="tab" data-tab="features" onclick="setActiveTab('features')">特徴量DB</button>
+      <button class="tab" data-tab="features" onclick="setActiveTab('features')">Feature DB</button>
     </nav>
 
     <div class="tabpanes" id="tabPanes">
@@ -559,47 +559,47 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
     <section class="tabpane" data-pane="features" id="pane-features">
       <div class="panel">
         <div class="panel-head">
-          <span class="panel-title">特徴量DB — ピーク解析</span>
-          <span style="font-size:10px;color:var(--text3);margin-left:10px">パターンを選び、チャート上のピーク付近をクリック→Fit→保存。擬フォークトで 2θ / FWHM / 積分強度 / 結晶サイズ(Scherrer) を抽出。</span>
+          <span class="panel-title">Feature DB — Peak analysis</span>
+          <span style="font-size:10px;color:var(--text3);margin-left:10px">Pick a pattern, click near a peak on the chart → Fit → Save. Pseudo-Voigt extracts 2θ / FWHM / integrated intensity / crystallite size (Scherrer).</span>
         </div>
         <div class="panel-body">
           <div class="feat-controls xrd-controls">
             <label>Sample<select id="featSampleSel" class="txt-sm" onchange="featSelectSample(this.value)"><option value="">— choose —</option></select></label>
-            <label>種別<select id="featPeakType" class="txt-sm" onchange="featOnParamChange()"><option value="bragg">ピーク (bragg)</option><option value="halo">ハロー (halo)</option></select></label>
-            <button type="button" class="btn" onclick="featAutoSuggest()" title="現在の窓の中で最も卓越したピークを検出">Auto-suggest</button>
+            <label>Type<select id="featPeakType" class="txt-sm" onchange="featOnParamChange()"><option value="bragg">Peak (bragg)</option><option value="halo">Halo (halo)</option></select></label>
+            <button type="button" class="btn" onclick="featAutoSuggest()" title="Detect the most prominent peak in the current window">Auto-suggest</button>
             <label>2θ min<input class="num" id="featWinMin" type="number" step="0.1" oninput="featOnWindowChange()"></label>
             <label>2θ max<input class="num" id="featWinMax" type="number" step="0.1" oninput="featOnWindowChange()"></label>
             <label>K<input class="num" id="featK" type="number" step="0.01" value="0.9" oninput="featRecompute()"></label>
-            <label title="装置由来のFWHM(deg)。標準試料(Si/LaB6等)があれば入力。0=補正なし">Instr.FWHM°<input class="num" id="featInstFwhm" type="number" step="0.01" value="0" oninput="featRecompute()"></label>
+            <label title="Instrumental FWHM (deg). Enter if you have a standard (Si/LaB6 etc.). 0 = no correction">Instr.FWHM°<input class="num" id="featInstFwhm" type="number" step="0.01" value="0" oninput="featRecompute()"></label>
             <button type="button" class="btn green" onclick="featDoFit()">Fit</button>
           </div>
           <div class="feat-controls xrd-controls" style="margin-top:2px">
-            <span style="font-size:11px;color:var(--text3)">表示範囲</span>
+            <span style="font-size:11px;color:var(--text3)">Display range</span>
             <label>X min<input class="num" id="featDispXMin" type="number" step="0.1" placeholder="auto" oninput="featOnDisplayChange()"></label>
             <label>X max<input class="num" id="featDispXMax" type="number" step="0.1" placeholder="auto" oninput="featOnDisplayChange()"></label>
             <label>Y min<input class="num" id="featDispYMin" type="number" step="1" placeholder="auto" oninput="featOnDisplayChange()"></label>
             <label>Y max<input class="num" id="featDispYMax" type="number" step="1" placeholder="auto" oninput="featOnDisplayChange()"></label>
-            <button type="button" class="btn" onclick="featResetDisplayRange()" title="表示範囲を自動に戻す">Auto</button>
+            <button type="button" class="btn" onclick="featResetDisplayRange()" title="Reset display range to auto">Auto</button>
           </div>
           <div class="feat-chart-wrap" id="featChartWrap" style="position:relative;height:360px;margin:6px 0;border:1px solid var(--border);border-radius:6px;padding:4px">
             <canvas id="featCanvas"></canvas>
           </div>
           <div id="featReadout" class="feat-readout" style="display:flex;flex-wrap:wrap;gap:14px;font-size:12px;padding:6px 4px;color:var(--text2)">
-            <span style="color:var(--text3)">Fit 未実行</span>
+            <span style="color:var(--text3)">Not fitted</span>
           </div>
           <div class="feat-controls xrd-controls" style="margin-top:4px">
             <label>hkl<input class="txt-sm" id="featHkl" type="text" placeholder="e.g. 111" style="width:70px"></label>
-            <label>相 phase<input class="txt-sm" id="featPhase" type="text" placeholder="e.g. α-quartz" style="width:130px"></label>
-            <button type="button" class="btn green" onclick="featSave()">この特徴量を保存</button>
+            <label>phase<input class="txt-sm" id="featPhase" type="text" placeholder="e.g. α-quartz" style="width:130px"></label>
+            <button type="button" class="btn green" onclick="featSave()">Save feature</button>
             <button type="button" class="btn" onclick="featClearWorkbench()">Clear</button>
           </div>
           <div class="panel-head" style="margin-top:12px;display:flex;align-items:center">
-            <span class="panel-title">保存済み特徴量</span>
+            <span class="panel-title">Saved features</span>
             <span id="featSavedCount" style="font-size:10px;color:var(--text3);margin-left:8px"></span>
             <button type="button" class="btn" style="margin-left:auto" onclick="exportFeaturesCsv()">CSV</button>
           </div>
           <div class="feat-controls xrd-controls" style="margin-top:6px;font-size:10px">
-            <span style="color:var(--text3)">品質フィルタ</span>
+            <span style="color:var(--text3)">Quality filter</span>
             <span id="featQualChips" style="display:inline-flex;gap:4px;flex-wrap:wrap"></span>
           </div>
           <div id="featSavedList" class="feat-saved-list" style="overflow:auto;font-size:11px;margin-top:6px"></div>
@@ -877,7 +877,7 @@ let albaExpEnvMap={};
    detector shares one acquisition time. Populated per drop from File.lastModified. */
 let albaFrameTimeMap={};
 let dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',instrument:'',site:'',dateFrom:'',dateTo:'',sort:'name-asc'};
-/* Instrument (装置) / site (測定地) live on the DB file record.
+/* Instrument / site live on the DB file record.
    Instrument is auto-filled at import from the parsed file (.ras → Rigaku SmartLab,
    HDF5 → NeXus instrument/name); site has no in-file source and is entered by hand.
    Both are free text — the presets below only seed the pickers and canonicalise spelling
@@ -6056,7 +6056,7 @@ function initFileDrop(){
   if(dz)dz.addEventListener('click',()=>document.getElementById('fileIn')?.click());
 }
 /* =====================================================================
-   特徴量DB (xrd_features) — Phase 1: peak extraction workbench
+   Feature DB (xrd_features) — Phase 1: peak extraction workbench
    pseudo-Voigt fit + 2-point baseline + Scherrer(optional instr. broadening)
    ===================================================================== */
 const FEAT_APP_VERSION='v16';
@@ -6208,11 +6208,11 @@ function featOnDisplayChange(){if(!featChart){featRedrawChart();return;}featAppl
 function featResetDisplayRange(){['featDispXMin','featDispXMax','featDispYMin','featDispYMax'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});featOnDisplayChange();}
 function featOnParamChange(){featFit=null;featRedrawChart();}
 function featAutoSuggest(){
-  if(!featSample){toast('Sample を選択してください');return;}
+  if(!featSample){toast('Select a sample');return;}
   featManualBase=null;
   const w=featWindow();
   const {xs,ys}=featWindowPoints(featSample,w.min,w.max);
-  if(xs.length<5){toast('窓内の点が少なすぎます');return;}
+  if(xs.length<5){toast('Too few points in the window');return;}
   const bl=featBaseline(xs,ys);
   let im=0,best=-Infinity;
   for(let i=0;i<xs.length;i++){const r=ys[i]-bl.at(xs[i]);if(r>best){best=r;im=i;}}
@@ -6236,10 +6236,10 @@ function featOnChartClick(evt){
   featDoFit();
 }
 function featDoFit(){
-  if(!featSample){toast('Sample を選択してください');return;}
+  if(!featSample){toast('Select a sample');return;}
   const w=featWindow();
   const {xs,ys}=featWindowPoints(featSample,w.min,w.max);
-  if(xs.length<5){toast('窓内の点が少なすぎます（2θ min/max を広げてください）');return;}
+  if(xs.length<5){toast('Too few points in the window (widen 2θ min/max)');return;}
   const bl=featResolveBaseline(xs,ys,w);
   // initial guess
   let im=0,ampR=-Infinity;
@@ -6293,22 +6293,22 @@ function featClearWorkbench(){
 function featRenderNum(v,dp){return Number.isFinite(v)?(+v).toFixed(dp):'—';}
 function featRenderReadout(){
   const el=document.getElementById('featReadout');if(!el)return;
-  if(!featFit){el.innerHTML='<span style="color:var(--text3)">Fit 未実行 — Sample を選び、ピーク付近をクリックか Auto-suggest → Fit。Fit後は灰色の●（ベースライン端点）をドラッグして窓・ベースラインを微調整（離すと自動再フィット）。</span>';return;}
+  if(!featFit){el.innerHTML='<span style="color:var(--text3)">Not fitted — pick a Sample, click near a peak or Auto-suggest → Fit. After fitting, drag the grey ● (baseline endpoints) to fine-tune the window/baseline (releasing re-fits automatically).</span>';return;}
   const f=featFit;
   const cell=(lbl,val,unit)=>`<span><b style="color:var(--text3);font-weight:600">${lbl}</b> <span style="color:var(--text)">${val}</span>${unit?`<span style="color:var(--text3)"> ${unit}</span>`:''}</span>`;
   const parts=[
-    cell('種別',f.peakType==='halo'?'ハロー':'ピーク',''),
+    cell('Type',f.peakType==='halo'?'Halo':'Peak',''),
     cell('2θ',featRenderNum(f.mu,3),'°'),
     cell('d',featRenderNum(f.d,4),'nm'),
     cell('FWHM',featRenderNum(f.fwhm,4),'°'),
-    cell('強度',featRenderNum(f.amp,1),'cps'),
-    cell('積分強度',featRenderNum(f.area,1),'cps·°'),
+    cell('Intensity',featRenderNum(f.amp,1),'cps'),
+    cell('Integ. int.',featRenderNum(f.area,1),'cps·°'),
     cell('η',featRenderNum(f.eta,3),''),
     cell('R²',featRenderNum(f.r2,4),'')
   ];
   if(f.peakType!=='halo'){
-    parts.push(cell('補正FWHM',featRenderNum(f.fwhmCorr,4),'°'));
-    parts.push(cell('結晶サイズ D',f.D!=null?featRenderNum(f.D,1):'—',f.D!=null?'nm':''));
+    parts.push(cell('Corr. FWHM',featRenderNum(f.fwhmCorr,4),'°'));
+    parts.push(cell('Crystallite D',f.D!=null?featRenderNum(f.D,1):'—',f.D!=null?'nm':''));
   }
   el.innerHTML=parts.join('');
 }
@@ -6403,8 +6403,8 @@ function featOnDragUp(){
 /* ---- persistence & table ---- */
 function featSaveRow(){return featSave();}
 async function featSave(){
-  if(!featFit){toast('先に Fit してください');return;}
-  if(!featSample){toast('Sample がありません');return;}
+  if(!featFit){toast('Fit first');return;}
+  if(!featSample){toast('No sample');return;}
   const f=featFit;
   const rec={
     fileName:featSample.rawName||featSample.name||'',
@@ -6433,13 +6433,13 @@ async function featSave(){
   };
   try{
     await adapter.saveFeature(rec);
-    toast('特徴量を保存しました');
+    toast('Feature saved');
     await refreshFeatureDb();
-  }catch(e){console.error(e);toast('保存に失敗: '+(e.message||e));}
+  }catch(e){console.error(e);toast('Save failed: '+(e.message||e));}
 }
 async function deleteFeatureRow(id){
-  if(!confirm('この特徴量を削除しますか？'))return;
-  try{await adapter.deleteFeature(id);await refreshFeatureDb();}catch(e){console.error(e);toast('削除に失敗: '+(e.message||e));}
+  if(!confirm('Delete this feature?'))return;
+  try{await adapter.deleteFeature(id);await refreshFeatureDb();}catch(e){console.error(e);toast('Delete failed: '+(e.message||e));}
 }
 async function refreshFeatureDb(){
   try{featSavedFeatures=await adapter.listFeatures();}catch(_e){featSavedFeatures=[];}
@@ -6447,29 +6447,29 @@ async function refreshFeatureDb(){
   featRenderSavedList();
 }
 /* ---- data-quality rating (1..5; absent = unrated) + filter ---- */
-const FEAT_QUAL_LABELS={1:'使用不可',2:'一部参考',3:'参考',4:'一部使用可',5:'論文可'};
-function featQualTitle(v){return v===0?'未評価':`${v}: ${FEAT_QUAL_LABELS[v]||''}`;}
+const FEAT_QUAL_LABELS={1:'Unusable',2:'Partly reference',3:'Reference',4:'Partly usable',5:'Publication-grade'};
+function featQualTitle(v){return v===0?'Unrated':`${v}: ${FEAT_QUAL_LABELS[v]||''}`;}
 let featQualFilter=[];   // multi-select levels (0 = unrated); empty = no filter
 function featToggleQualFilter(v){const i=featQualFilter.indexOf(v);if(i>=0)featQualFilter.splice(i,1);else featQualFilter.push(v);featRenderSavedList();}
 // A 5-star rating widget for one saved feature. Clicking a star sets that level; clicking the current one clears it.
 function featQualStarsHtml(id,cur){
   const c=Number.isFinite(cur)?cur:0;
   const stars=[1,2,3,4,5].map(n=>`<span class="qstar${c>=n?' on':''}" onclick="event.stopPropagation();setFeatureQuality(${JSON.stringify(id)},${n})" title="${featQualTitle(n)}">★</span>`).join('');
-  return `<span class="feat-qual" title="データ品質 — 星をクリックで評価、同じ星で解除">${stars}</span>`;
+  return `<span class="feat-qual" title="Data quality — click a star to rate, click the same star to clear">${stars}</span>`;
 }
 async function setFeatureQuality(id,n){
   const rec=featSavedFeatures.find(r=>r.id===id);if(!rec)return;
   const cur=Number.isFinite(rec.qualification)?rec.qualification:0;
   const next=(cur===n)?0:n;
   if(next)rec.qualification=next;else delete rec.qualification;
-  try{await adapter.saveFeature(rec);}catch(e){console.error(e);toast('品質の保存に失敗: '+(e.message||e));return;}
+  try{await adapter.saveFeature(rec);}catch(e){console.error(e);toast('Quality save failed: '+(e.message||e));return;}
   featRenderSavedList();
 }
 function featRenderQualChips(){
   const el=document.getElementById('featQualChips');if(!el)return;
   el.innerHTML=[5,4,3,2,1,0].map(v=>{
     const on=featQualFilter.includes(v);
-    return `<button type="button" class="qual-chip${on?' on':''}" onclick="featToggleQualFilter(${v})" title="${featQualTitle(v)}">${v===0?'未評価':'★'+v}</button>`;
+    return `<button type="button" class="qual-chip${on?' on':''}" onclick="featToggleQualFilter(${v})" title="${featQualTitle(v)}">${v===0?'Unrated':'★'+v}</button>`;
   }).join('');
 }
 function featRenderSavedList(){
@@ -6479,9 +6479,9 @@ function featRenderSavedList(){
     ? featSavedFeatures.filter(r=>featQualFilter.includes(Number.isFinite(r.qualification)?r.qualification:0))
     : featSavedFeatures;
   const cnt=document.getElementById('featSavedCount');
-  if(cnt)cnt.textContent=featSavedFeatures.length?(featQualFilter.length?`${list.length}/${featSavedFeatures.length} 件`:`${featSavedFeatures.length} 件`):'';
-  if(!featSavedFeatures.length){box.innerHTML='<div class="empty" style="color:var(--text3);padding:8px">まだ特徴量がありません。</div>';return;}
-  if(!list.length){box.innerHTML='<div class="empty" style="color:var(--text3);padding:8px">フィルタに一致する特徴量がありません。</div>';return;}
+  if(cnt)cnt.textContent=featSavedFeatures.length?(featQualFilter.length?`${list.length}/${featSavedFeatures.length} items`:`${featSavedFeatures.length} items`):'';
+  if(!featSavedFeatures.length){box.innerHTML='<div class="empty" style="color:var(--text3);padding:8px">No features yet.</div>';return;}
+  if(!list.length){box.innerHTML='<div class="empty" style="color:var(--text3);padding:8px">No features match the filter.</div>';return;}
   const th=(t)=>`<th style="text-align:left;padding:3px 6px;border-bottom:1px solid var(--border);white-space:nowrap">${t}</th>`;
   const td=(v)=>`<td style="padding:3px 6px;border-bottom:1px solid var(--border);white-space:nowrap">${v}</td>`;
   const rows=list.map(r=>{
@@ -6493,7 +6493,7 @@ function featRenderSavedList(){
     const tc=Number.isFinite(+r.tempC)?(+r.tempC).toFixed(1):'—';
     return `<tr>
       ${td(esc(r.sampleName||''))}
-      ${td(r.peakType==='halo'?'ハロー':'ピーク')}
+      ${td(r.peakType==='halo'?'Halo':'Peak')}
       ${td(t2)}${td(d)}${td(fw)}${td(inten)}${td(D)}${td(tc)}
       ${td(esc(r.hkl||''))}${td(esc(r.phase||''))}
       ${td(featQualStarsHtml(r.id,r.qualification))}
@@ -6501,11 +6501,11 @@ function featRenderSavedList(){
     </tr>`;
   }).join('');
   box.innerHTML=`<table style="border-collapse:collapse;font-size:11px;min-width:820px">
-    <thead><tr>${th('Sample')}${th('種別')}${th('2θ °')}${th('d nm')}${th('FWHM °')}${th('強度')}${th('D nm')}${th('T °C')}${th('hkl')}${th('相')}${th('品質')}${th('')}</tr></thead>
+    <thead><tr>${th('Sample')}${th('Type')}${th('2θ °')}${th('d nm')}${th('FWHM °')}${th('Intensity')}${th('D nm')}${th('T °C')}${th('hkl')}${th('Phase')}${th('Quality')}${th('')}</tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 function exportFeaturesCsv(){
-  if(!featSavedFeatures.length){toast('出力する特徴量がありません');return;}
+  if(!featSavedFeatures.length){toast('No features to export');return;}
   const cols=['sampleName','fileName','tempC','peakType','two_theta_deg','d_nm','intensity_cps','area_cps_deg','fwhm_deg','fwhm_corrected_deg','crystallite_nm','K','lambda_A','instrumental_fwhm_deg','hkl','phase','qualification','fitModel','fit_xMin','fit_xMax','computedAt'];
   const escCsv=v=>{if(v==null)return'';const s=String(v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
   const lines=[cols.join(',')];
