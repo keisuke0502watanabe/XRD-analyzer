@@ -665,6 +665,18 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
     </div>
   </div>
 </div>
+
+<div id="backupPromptModal" class="modal-bg">
+  <div class="modal" style="max-width:460px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:.5rem">🛟 Back up your database?</div>
+    <div id="backupPromptBody" style="font-size:12px;color:var(--text2);line-height:1.55;margin-bottom:.9rem"></div>
+    <div class="ctrl-row" style="justify-content:flex-end;gap:6px;flex-wrap:wrap">
+      <button class="btn" onclick="autoBackup.dismissPrompt()">Not now</button>
+      <button class="btn" id="backupPromptPickBtn" onclick="autoBackup.promptPick()" style="display:none">Choose another folder…</button>
+      <button class="btn green" id="backupPromptMainBtn" onclick="autoBackup.promptMain()">Choose backup folder…</button>
+    </div>
+  </div>
+</div>
 <div id="saveModal" class="modal-bg">
   <div class="modal">
     <div style="font-size:13px;margin-bottom:.7rem">Save Project</div>
@@ -6191,6 +6203,38 @@ const autoBackup={
       btn.title=this.supported()?'Click to choose a folder for automatic DB backups.':'Auto-backup unavailable (needs Chrome/Edge over a secure context).';
       if(off)off.style.display='none';
     }
+  },
+  /* ---- startup prompt: ask to pick/reconnect a backup folder so it isn't forgotten.
+     showDirectoryPicker()/requestPermission() need a user gesture, so the actual pick
+     happens from the modal buttons, not automatically on load. ---- */
+  dismissPrompt(){const m=document.getElementById('backupPromptModal');if(m)m.classList.remove('show');},
+  async promptMain(){
+    this.dismissPrompt();
+    if(this.state==='reconnect')await this.reconnect(); else await this.pickFolder();
+  },
+  async promptPick(){this.dismissPrompt();await this.pickFolder();},
+  showPrompt(){
+    const modal=document.getElementById('backupPromptModal');if(!modal)return;
+    const body=document.getElementById('backupPromptBody');
+    const mainBtn=document.getElementById('backupPromptMainBtn');
+    const pickBtn=document.getElementById('backupPromptPickBtn');
+    const nf=(typeof dbFiles!=='undefined'&&Array.isArray(dbFiles))?dbFiles.length:0;
+    const name=this.handle&&this.handle.name?this.handle.name:'';
+    if(this.state==='reconnect'){
+      if(body)body.innerHTML=`This session is <b>not backing up yet</b>. Your folder <b>"${esc(name)}"</b> needs permission again to resume automatic backups of the DB cache (<b>${nf}</b> files).<br><br>Browser storage is best-effort and can be evicted, so keeping a backup protects your data.`;
+      if(mainBtn)mainBtn.textContent='Reconnect & back up';
+      if(pickBtn)pickBtn.style.display='';
+    }else{
+      if(body)body.innerHTML=`Your DB cache (<b>${nf}</b> files) can be <b>evicted by the browser</b> under disk pressure. Pick a local folder and the app will auto-save a dated JSON backup on every change.`;
+      if(mainBtn)mainBtn.textContent='Choose backup folder…';
+      if(pickBtn)pickBtn.style.display='none';
+    }
+    modal.classList.add('show');
+  },
+  maybePromptOnStartup(){
+    if(!this.supported())return;      // needs Chrome/Edge File System Access API
+    if(this.state==='on')return;      // already backing up this session
+    this.showPrompt();
   }
 };
 async function importFullDb(file){
@@ -7097,6 +7141,7 @@ document.getElementById('dbIn').addEventListener('change',e=>{const f=e.target.f
   try{await refreshFeatureDb();}catch(e){console.error(e);}
   try{await autoBackup.restoreOnStartup();}catch(e){console.error(e);}
   try{await ensureStoragePersisted();}catch(e){console.error(e);}
+  try{autoBackup.maybePromptOnStartup();}catch(e){console.error(e);}
   try{renderAll();}catch(e){console.error(e);toast('UI: '+(e.message||e));}
 })();
 </script>
