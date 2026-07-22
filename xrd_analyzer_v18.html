@@ -6194,14 +6194,18 @@ const autoBackup={
   }
 };
 async function importFullDb(file){
+  // DB Import is always a non-destructive MERGE: existing entries are kept and only
+  // the missing ones are added. (Previously a confusing "OK=replace / Cancel=merge"
+  // prompt lived below — pressing Cancel did NOT abort, it merged. Removed so the
+  // dialog now means the usual OK=proceed / Cancel=abort.)
+  if(!confirm(`Import "${file.name}" and merge it into the current database?\n\nExisting entries are kept — only the missing ones are added.\n\n[ OK ] = import      [ Cancel ] = do nothing`))return;
   const r=new FileReader();
   r.onload=async e=>{
     try{
       const payload=JSON.parse(e.target.result);
       if(!Array.isArray(payload.files)||!Array.isArray(payload.projects))throw new Error('Invalid DB dump');
       if(payload.app&&payload.app!=='xrd_th')throw new Error(`This looks like a "${payload.app}" DB dump, not an XRD one. Import aborted to avoid corrupting the database.`);
-      const replace=confirm('OK=replace / Cancel=merge?');
-      if(replace){await adapter.clearFiles();await adapter.clearProjects();try{await adapter.clearThermalSeries();}catch(_e){}try{await adapter.clearFeatures();}catch(_e){}}
+      const replace=false;   // import never wipes the existing DB
       const existingFiles=replace?[]:await adapter.listFiles();
       const existingProjects=replace?[]:await adapter.listProjects();
       const existingTs=replace?[]:(await adapter.listThermalSeries().catch(()=>[]));
@@ -6229,7 +6233,7 @@ async function importFullDb(file){
       }
       await refreshDbPanels();
       try{await refreshFeatureDb();}catch(_e){}
-      toast('DB imported');
+      toast('DB imported — cache now holds '+((typeof dbFiles!=='undefined'&&dbFiles)?dbFiles.length:'?')+' files');
     }catch(err){alert(err.message);}
   };
   r.readAsText(file,'UTF-8');
