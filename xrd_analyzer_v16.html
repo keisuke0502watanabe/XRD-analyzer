@@ -574,12 +574,13 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <button type="button" class="btn green" onclick="featDoFit()">Fit</button>
           </div>
           <div class="feat-controls xrd-controls" style="margin-top:2px">
-            <span style="font-size:11px;color:var(--text3)">Display range</span>
-            <label>X min<input class="num" id="featDispXMin" type="number" step="0.1" placeholder="auto" oninput="featOnDisplayChange()"></label>
-            <label>X max<input class="num" id="featDispXMax" type="number" step="0.1" placeholder="auto" oninput="featOnDisplayChange()"></label>
-            <label>Y min<input class="num" id="featDispYMin" type="number" step="1" placeholder="auto" oninput="featOnDisplayChange()"></label>
-            <label>Y max<input class="num" id="featDispYMax" type="number" step="1" placeholder="auto" oninput="featOnDisplayChange()"></label>
-            <button type="button" class="btn" onclick="featResetDisplayRange()" title="Reset display range to auto">Auto</button>
+            <span style="font-size:11px;color:var(--text3)" title="The chart span is fixed — fitting or moving the window never rescales it. Edit these and press Apply (or Enter) to change it.">Display span (fixed)</span>
+            <label>X min<input class="num" id="featDispXMin" type="number" step="0.1" placeholder="auto" onkeydown="if(event.key==='Enter')featApplyDisplaySpan()"></label>
+            <label>X max<input class="num" id="featDispXMax" type="number" step="0.1" placeholder="auto" onkeydown="if(event.key==='Enter')featApplyDisplaySpan()"></label>
+            <label>Y min<input class="num" id="featDispYMin" type="number" step="1" placeholder="auto" onkeydown="if(event.key==='Enter')featApplyDisplaySpan()"></label>
+            <label>Y max<input class="num" id="featDispYMax" type="number" step="1" placeholder="auto" onkeydown="if(event.key==='Enter')featApplyDisplaySpan()"></label>
+            <button type="button" class="btn green" onclick="featApplyDisplaySpan()" title="Apply the span above to the chart">Apply</button>
+            <button type="button" class="btn" onclick="featResetDisplayRange()" title="Reset span to the full data range">Auto</button>
           </div>
           <div class="feat-chart-wrap" id="featChartWrap" style="position:relative;height:360px;margin:6px 0;border:1px solid var(--border);border-radius:6px;padding:4px">
             <canvas id="featCanvas"></canvas>
@@ -6179,6 +6180,10 @@ function featSelectSample(uid){
       if(wmin&&!wmin.value)wmin.value=lo.toFixed(1);
       if(wmax&&!wmax.value)wmax.value=hi.toFixed(1);
     }
+    featSpan=featAutoSpan();             // fix the display span to the full pattern on load
+    featSetSpanInputs(featSpan);
+  }else{
+    featSpan=null;featSetSpanInputs({});
   }
   featRenderReadout();
   featRedrawChart();
@@ -6193,19 +6198,50 @@ function featWindow(){
   return{min:Number.isFinite(wmin)?wmin:0,max:Number.isFinite(wmax)?wmax:180};
 }
 function featOnWindowChange(){featFit=null;featManualBase=null;featRedrawChart();}
-/* ---- display span (chart axis min/max; blank = auto) ---- */
-function featDisplayRange(){
+/* ---- display span: an EXPLICIT fixed axis range. Only Apply / Auto / selecting a
+   sample change it. Fitting or moving the 2θ window redraws with this same span, so
+   the view stays put instead of auto-rescaling around the datasets. ---- */
+let featSpan=null;                 // {xmin,xmax,ymin,ymax} currently applied; null before a sample
+function featAutoSpan(){           // full pattern extent (x = data range, y = min..max +5% pad)
+  const empty={xmin:undefined,xmax:undefined,ymin:undefined,ymax:undefined};
+  if(!featSample||!featSample.tth||!featSample.tth.length)return empty;
+  const t=featSample.tth,y=featSample.intensity||[];
+  let ymin=Infinity,ymax=-Infinity;
+  for(let i=0;i<y.length;i++){const v=y[i];if(Number.isFinite(v)){if(v<ymin)ymin=v;if(v>ymax)ymax=v;}}
+  if(!Number.isFinite(ymin)){ymin=undefined;ymax=undefined;}
+  else{const pad=(ymax-ymin)*0.05||1;ymin-=pad;ymax+=pad;}
+  return{xmin:t[0],xmax:t[t.length-1],ymin,ymax};
+}
+function featSpanFromInputs(){      // blank field => fall back to the full-data value for that axis
   const g=id=>{const v=parseFloat(document.getElementById(id)?.value);return Number.isFinite(v)?v:undefined;};
-  return{xmin:g('featDispXMin'),xmax:g('featDispXMax'),ymin:g('featDispYMin'),ymax:g('featDispYMax')};
+  const a=featAutoSpan();
+  return{xmin:g('featDispXMin')??a.xmin,xmax:g('featDispXMax')??a.xmax,
+         ymin:g('featDispYMin')??a.ymin,ymax:g('featDispYMax')??a.ymax};
 }
-function featApplyDisplayRange(){
+function featSetSpanInputs(sp){
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.value=Number.isFinite(v)?(+v).toFixed(2):'';};
+  set('featDispXMin',sp.xmin);set('featDispXMax',sp.xmax);set('featDispYMin',sp.ymin);set('featDispYMax',sp.ymax);
+}
+function featApplyDisplayRange(){   // push the stored span onto the chart (called by every redraw)
   if(!featChart)return;
-  const dr=featDisplayRange();
-  featChart.options.scales.x.min=dr.xmin;featChart.options.scales.x.max=dr.xmax;
-  featChart.options.scales.y.min=dr.ymin;featChart.options.scales.y.max=dr.ymax;
+  const sp=featSpan||{};
+  featChart.options.scales.x.min=sp.xmin;featChart.options.scales.x.max=sp.xmax;
+  featChart.options.scales.y.min=sp.ymin;featChart.options.scales.y.max=sp.ymax;
 }
-function featOnDisplayChange(){if(!featChart){featRedrawChart();return;}featApplyDisplayRange();featChart.update('none');}
-function featResetDisplayRange(){['featDispXMin','featDispXMax','featDispYMin','featDispYMax'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});featOnDisplayChange();}
+/** Apply button / Enter: commit the input values as the new fixed span. */
+function featApplyDisplaySpan(){
+  featSpan=featSpanFromInputs();
+  featSetSpanInputs(featSpan);      // reflect the resolved (blank→auto) values back into the boxes
+  if(!featChart){featRedrawChart();return;}
+  featApplyDisplayRange();featChart.update('none');
+}
+/** Auto button: reset the span to the full data range. */
+function featResetDisplayRange(){
+  featSpan=featAutoSpan();
+  featSetSpanInputs(featSpan);
+  if(!featChart){featRedrawChart();return;}
+  featApplyDisplayRange();featChart.update('none');
+}
 function featOnParamChange(){featFit=null;featRedrawChart();}
 function featAutoSuggest(){
   if(!featSample){toast('Select a sample');return;}
@@ -6334,7 +6370,7 @@ function featRedrawChart(){
     datasets.push({label:'basehandles',data:basePts,borderColor:'#6b7280',backgroundColor:featManualBase?'#0ea5e9':'#e5e7eb',borderWidth:2,pointRadius:6,pointHoverRadius:8,showLine:false,parsing:false,order:0});
   }
   const gridC=getComputedStyle(document.body).getPropertyValue('--border')||'#ddd';
-  const dr=featDisplayRange();
+  const dr=featSpan||{};
   if(featChart){featChart.data.datasets=datasets;featApplyDisplayRange();featChart.update('none');return;}
   featChart=new Chart(canvas,{
     type:'line',
