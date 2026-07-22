@@ -350,6 +350,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <button class="btn" onclick="selectFilteredToBasket(false)" title="Remove every file matching the current filter from the basket">− filtered</button>
             <button class="btn" id="dbBulkEditBtn" onclick="openDbBulkEditModal()" disabled title="Edit metadata for every file in the basket">Bulk edit basket</button>
             <button class="btn" id="dbBulkClearBtn" onclick="clearFirstBasket()" disabled>Clear basket</button>
+            <button class="btn" id="dbBulkCsvBtn" onclick="exportBasketIntensityCsv()" disabled title="Export the basket's intensities to a wide CSV: col 1 = shared x axis (ALBA q, or 2θ), col 2+ = each file's intensity. All files must be the same detector type (SAXS or WAXS), same row count, same x grid.">Export CSV</button>
             <button class="btn" onclick="autoTagAlbaScans({toast:true})" title="Tag ALBA frames by scan name: iso_1, ramp_up_2, … (both detectors share the tag)">Auto-tag: scan name</button>
             <button class="btn" onclick="backfillFolderPaths()" title="Fill folder/path from each file's header (# --> …) so old records become filterable by path">Fill paths</button>
           </div>
@@ -4920,8 +4921,10 @@ function updateDbBulkBar(){
   if(cnt)cnt.textContent=`Basket: ${n}`;
   const editBtn=document.getElementById('dbBulkEditBtn');
   const clrBtn=document.getElementById('dbBulkClearBtn');
+  const csvBtn=document.getElementById('dbBulkCsvBtn');
   if(editBtn)editBtn.disabled=n<1;
   if(clrBtn)clrBtn.disabled=n<1;
+  if(csvBtn)csvBtn.disabled=n<1;
 }
 function renderDbFileItem(f){
   const fid=f.id;
@@ -5450,6 +5453,101 @@ function clearFirstBasket(){
   firstBasket=[];firstBasketExcluded.clear();
   renderFirstBasket();renderDbFileList();
   if(basketPlotted)syncBasketPlot();
+}
+
+/* ===== Export basket intensities to a wide CSV (ALBA SAXS/WAXS) ===============
+   Layout mirrors the SAXS/WAXS reference sheets: NO header row,
+     col 1        = the shared x grid taken from the FIRST basket file
+                    (ALBA q in nm^-1 for pyFAI .dat; otherwise the stored 2θ),
+     col 2..N+1   = each basket file's intensity, in basket order.
+   Guards (per spec): SAXS and WAXS must not be mixed; every file must have the
+   same row count; and every file's x column must be identical — only then run. */
+function _albaTypeFromStr(str){
+  if(/WAXD|rayonix/i.test(str))return'waxs';
+  if(/SAXD|pilatus/i.test(str))return'saxs';
+  return'other';
+}
+/** Read a basket file into {name,type,xTok[],yTok[],xNum[]}.
+    For plain 2-column text (ALBA .dat / .scn) the tokens are taken VERBATIM from
+    the file (exact original q & intensity, no rounding). HDF5/XRDML/RAS fall back
+    to the parsed sample: reconstructed q for ALBA (meta.albaQ) else the stored 2θ. */
+async function _exportReadFile(id){
+  id=Number(id);
+  const rec=await adapter.getFile(id);
+  const name=(rec&&rec.name)||('id'+id);
+  let type=_albaTypeFromStr(`${(rec&&rec.instrument)||''} ${name}`);
+  const rt=rec&&rec.rawText;
+  const isB64=typeof rt==='string'&&(rt.startsWith('__HDF5_BASE64__')||rt.startsWith('__PROJECT_SAMPLE_JSON__'));
+  // exact-token path: plain text with numeric "x  I [sigma]" data lines
+  if(typeof rt==='string'&&!isB64){
+    const xTok=[],yTok=[],xNum=[];
+    for(const line of rt.split(/\r?\n/)){
+      const t=line.trim();
+      if(!t||t[0]==='#')continue;
+      const p=t.split(/[\s,]+/);
+      if(p.length<2)continue;
+      const x=parseFloat(p[0]),y=parseFloat(p[1]);
+      if(!Number.isFinite(x)||!Number.isFinite(y))continue;
+      xTok.push(p[0]);yTok.push(p[1]);xNum.push(x);
+    }
+    if(xTok.length)return {name,type,xTok,yTok,xNum};
+  }
+  // fallback: parse to a sample (reuse one already loaded), reconstruct q or use 2θ
+  let s=samples.find(v=>v.dbId===id);
+  if(!s&&typeof rt==='string'){
+    if(rt.startsWith('__HDF5_BASE64__')){const bin=atob(rt.slice('__HDF5_BASE64__'.length));const buf=new ArrayBuffer(bin.length);const view=new Uint8Array(buf);for(let i=0;i<bin.length;i++)view[i]=bin.charCodeAt(i);s=await parseHDF5(buf,name);}
+    else if(rt.startsWith('__PROJECT_SAMPLE_JSON__')){s=JSON.parse(b64DecodeUtf8(rt.slice('__PROJECT_SAMPLE_JSON__'.length)));}
+    else{s=await Promise.resolve(parseAny({name},rt));}
+    if(s&&rec)applyDbRecordMeta(s,rec);
+  }
+  if(!s||!s.tth||!s.tth.length)return {name,type,xTok:[],yTok:[],xNum:[]};
+  if(type==='other')type=_albaTypeFromStr(`${s.meta&&s.meta.instrument||''} ${s.meta&&s.meta.detector||''} ${name}`);
+  const useQ=s.meta&&s.meta.albaQ;
+  const xNum=s.tth.map(v=>useQ?xFromTwoThetaDeg(v,s,'q'):v);
+  const y=s.intensity||[];
+  return {name,type,xNum,
+    xTok:xNum.map(v=>Number.isFinite(v)?String(v):''),
+    yTok:y.map(v=>Number.isFinite(+v)?String(+v):'')};
+}
+async function exportBasketIntensityCsv(){
+  const ids=basketIncludedIds();
+  if(!ids.length){toast('Basket is empty');return;}
+  let items;
+  try{items=await Promise.all(ids.map(_exportReadFile));}
+  catch(e){console.error(e);toast('CSV export failed: '+(e.message||e));return;}
+  const empty=items.find(it=>!it.xNum.length);
+  if(empty){toast(`Could not read a basket file (${empty.name})`);return;}
+  // (3) SAXS and WAXS must not coexist
+  const types=new Set(items.map(it=>it.type));
+  if(types.has('saxs')&&types.has('waxs')){toast('Basket mixes SAXS and WAXS — export one detector type at a time');return;}
+  // (4) every file must have the same number of rows
+  const n=items[0].xNum.length;
+  const badLen=items.find(it=>it.xNum.length!==n||it.yTok.length!==n);
+  if(badLen){toast(`Row counts differ (${badLen.name}: ${badLen.xNum.length} vs ${n}) — all patterns must have the same length`);return;}
+  // (5) every file's first column must be identical to the first file's
+  const ref=items[0].xNum,EPS=1e-6;
+  for(let k=1;k<items.length;k++){
+    const xk=items[k].xNum;
+    for(let r=0;r<n;r++){
+      if(Math.abs(ref[r]-xk[r])>EPS*Math.max(1,Math.abs(ref[r]))){
+        toast(`First-column values differ (${items[k].name}, row ${r+1}) — all files must share the same x axis`);return;
+      }
+    }
+  }
+  // build CSV: col1 = first file's exact x tokens, col2.. = each file's intensity; no header row
+  const x0=items[0].xTok;
+  const lines=new Array(n);
+  for(let r=0;r<n;r++){
+    const row=[x0[r]];
+    for(const it of items)row.push(it.yTok[r]);
+    lines[r]=row.join(',');
+  }
+  const kind=types.has('waxs')?'waxs':(types.has('saxs')?'saxs':'xrd');
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=`${kind}_intensity_${stamp()}.csv`;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast(`Exported ${items.length} pattern${items.length>1?'s':''} × ${n} rows (${kind.toUpperCase()})`);
 }
 function reorderFirstBasket(fromId,toId){
   fromId=Number(fromId);toId=Number(toId);
