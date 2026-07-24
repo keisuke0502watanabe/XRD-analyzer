@@ -61,7 +61,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .app.db-layout-sidebar .db-col-files{flex:1}
 .app.db-layout-sidebar .db-col-projects{flex:1;min-height:88px}
 .app.db-layout-sidebar .db-col-series{flex:0 0 auto}
-.app.db-layout-top .db-dock-col .db-list{flex:1;max-height:none!important;min-height:0}
+.app.db-layout-top .db-dock-col .db-list{flex:1;max-height:none!important;min-height:120px}
 .app.db-layout-top .db-list.db-list--files{max-height:none}
 .app.db-layout-top #dbThermalSeriesList{max-height:none!important}
 .main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0}
@@ -97,7 +97,9 @@ body.theme-dark .app-notice{background:#352a12;border-color:#8a7020;color:#f2e6c
 .db-filter-row select#dbFilterInstrument,.db-filter-row select#dbFilterSite{width:112px}
 .db-filter-clear{font-size:10px;padding:2px 6px;border:1px solid var(--border);border-radius:3px;background:var(--bg3);color:var(--text3);cursor:pointer;white-space:nowrap}
 .db-filter-clear:hover{color:var(--text);background:var(--bg4)}
-.db-tree-order{display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:.3rem .65rem;border-bottom:1px solid var(--border);background:var(--bg2)}
+/* Deep grouping means many level selects: let the bar scroll instead of eating the
+   whole column and squeezing the file list to zero height. */
+.db-tree-order{display:flex;gap:4px;align-items:center;flex-wrap:wrap;padding:.3rem .65rem;border-bottom:1px solid var(--border);background:var(--bg2);max-height:96px;overflow-y:auto;flex-shrink:0}
 .db-tree-order label{font-size:10px;color:var(--text3);display:flex;gap:3px;align-items:center}
 .db-tree-order select{font-size:10px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);max-width:88px}
 .db-tree-order .db-tree-lvl-btn{font-size:11px;line-height:1;padding:2px 7px;min-width:0}
@@ -384,7 +386,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
           <span style="font-size:10px;color:var(--text3)">Tree:</span>
           <span id="dbTreeLevels" style="display:contents"></span>
           <button class="btn db-tree-lvl-btn" id="dbTreeRemoveLevel" onclick="removeDbTreeLevel()" title="Remove the last grouping level">−</button>
-          <button class="btn db-tree-lvl-btn" id="dbTreeAddLevel" onclick="addDbTreeLevel()" title="Add a grouping level (max 5)">+</button>
+          <button class="btn db-tree-lvl-btn" id="dbTreeAddLevel" onclick="addDbTreeLevel()" title="Add a grouping level">+</button>
         </div>
         <div id="dbFileList" class="db-list db-list--files"><div class="empty">No files in cache</div></div>
       </div>
@@ -1013,7 +1015,9 @@ const INSTRUMENT_ALIASES=[[/rigaku|smart\s*lab/i,'Rigaku SmartLab'],[/anton\s*pa
 const DB_FILTER_NONE='__unset__';   // sentinel: "only files with this field unset"
 const DB_TREE_FIELDS=['sample','folder','measStartDate','measStart','temp','instrument','site','filename','dataset','tags','capillary','measEnd','measTime','date'];
 let dbTreeOrder=['sample','measStart','temp'];
-const DB_TREE_MAX_LEVELS=5;
+/* One level per available field: past that a level can only repeat a field already
+   used, which splits nothing further. */
+const DB_TREE_MAX_LEVELS=DB_TREE_FIELDS.length;
 const DB_TREE_MIN_LEVELS=1;
 let dbTreeCollapsed={};
 let dbFolderCollapsed={};
@@ -5225,7 +5229,10 @@ function initDbTreeOrderUi(){
   dbTreeOrder.forEach((field,idx)=>{const el=document.getElementById('dbTreeLevel'+(idx+1));if(el)el.value=field;});
   const addBtn=document.getElementById('dbTreeAddLevel');
   const remBtn=document.getElementById('dbTreeRemoveLevel');
-  if(addBtn)addBtn.disabled=dbTreeOrder.length>=DB_TREE_MAX_LEVELS;
+  if(addBtn){
+    addBtn.disabled=dbTreeOrder.length>=DB_TREE_MAX_LEVELS;
+    addBtn.title=`Add a grouping level (${dbTreeOrder.length}/${DB_TREE_MAX_LEVELS})`;
+  }
   if(remBtn)remBtn.disabled=dbTreeOrder.length<=DB_TREE_MIN_LEVELS;
 }
 function refreshTreesAfterOrderChange(){
