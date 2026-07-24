@@ -510,6 +510,12 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <button type="button" class="btn" onclick="removeShownFromBasket()" style="padding:2px 6px;font-size:10px" title="Remove the currently-shown (filtered) traces from this pattern">− shown</button>
               <button type="button" class="btn" onclick="clearBasketSelection()" style="padding:2px 6px;font-size:10px" title="Remove all traces from this pattern">clear</button>
             </div>
+            <div class="basket-controls" title="Keep roughly evenly spaced traces out of the shown list (first and last always kept). Traces hidden by the search box are left untouched; add or remove individually afterwards.">
+              <span style="font-size:10px;color:var(--text3)">show</span>
+              <input type="range" id="basketThinRange" min="1" max="1" value="1" step="1" style="flex:1;min-width:70px" oninput="previewBasketThin(this.value)" onchange="applyBasketThin(this.value)">
+              <input type="number" class="num" id="basketThinCount" min="1" step="1" style="width:52px" onchange="applyBasketThin(this.value)">
+              <span id="basketThinHint" style="font-size:10px;color:var(--text3);white-space:nowrap"></span>
+            </div>
             <div id="combineSamplePicker" style="max-height:min(200px,26vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:4px 6px;margin-bottom:6px;font-size:11px"></div>
             <div class="title" style="margin-bottom:4px">Trace settings</div>
             <div class="avg-pattern-row" id="avgPatternUi"></div>
@@ -863,6 +869,29 @@ function xrdLegendOnClick(kind){
     if(kind==='xrd')renderXrdTraceList();
   };
 }
+const LEGEND_BESIDE_FONT_PX=10;
+const LEGEND_BESIDE_LINE_PX=LEGEND_BESIDE_FONT_PX+2;   // one label's own height + 2px leading
+/** Push apart side-legend labels that would print on top of each other.
+ *  `entries` must be sorted by `y` ascending; each is nudged by whole label heights
+ *  (`gap`) so the order still matches the traces, and the block is kept inside
+ *  [top, bottom] when it fits. When more labels are asked for than the axis can hold
+ *  (n·gap > height) nothing can stop them touching, so they are spread evenly instead
+ *  — that is the case the basket "show N" thinning is for. */
+function spreadLegendEntries(entries,gap,top,bottom){
+  const n=entries.length;
+  if(n<2)return;
+  if(n*gap>(bottom-top)){
+    const step=(bottom-top)/(n-1);
+    entries.forEach((e,i)=>{e.y=top+i*step;});
+    return;
+  }
+  let prev=-Infinity;
+  for(let i=0;i<n;i++){const y=Math.max(entries[i].y,prev+gap);entries[i].y=y;prev=y;}
+  let next=Infinity;
+  for(let i=n-1;i>=0;i--){const y=Math.min(entries[i].y,next-gap,bottom);entries[i].y=y;next=y;}
+  prev=-Infinity;
+  for(let i=0;i<n;i++){const y=Math.max(entries[i].y,prev+gap,top);entries[i].y=y;prev=y;}
+}
 const inlineTraceLegendPlugin={
   id:'inlineTraceLegend',
   afterDatasetsDraw(chart,_args,pluginOpts){
@@ -870,12 +899,9 @@ const inlineTraceLegendPlugin={
     const {ctx,chartArea,data}=chart;
     if(!chartArea||!data?.datasets)return;
     const textColor=xrdChartTextColor();
-    ctx.save();
-    ctx.font='10px system-ui,sans-serif';
-    ctx.textBaseline='middle';
-    ctx.textAlign='left';
     const x0=chartArea.right+6+(legendBesideXOffsetPx||0);
     const yPad=legendBesideYOffsetPx||0;
+    const entries=[];
     data.datasets.forEach((ds,di)=>{
       if(!chart.isDatasetVisible(di))return;
       const pts=ds.data;
@@ -889,11 +915,20 @@ const inlineTraceLegendPlugin={
       const dsAdj=Number.isFinite(ds._legendYAdjPx)?ds._legendYAdjPx:0;
       const py=chart.scales.y?.getPixelForValue(yVal)+yPad+dsAdj;
       if(!Number.isFinite(py)||py<chartArea.top-2||py>chartArea.bottom+2)return;
-      const color=typeof ds.borderColor==='string'?ds.borderColor:'#378ADD';
-      ctx.fillStyle=color;
-      ctx.fillRect(x0,py-4,8,8);
+      entries.push({y:py,label:String(ds.label||''),color:typeof ds.borderColor==='string'?ds.borderColor:'#378ADD'});
+    });
+    if(!entries.length)return;
+    entries.sort((a,b)=>a.y-b.y);
+    if(legendBesideDeoverlap)spreadLegendEntries(entries,LEGEND_BESIDE_LINE_PX,chartArea.top+LEGEND_BESIDE_LINE_PX/2,chartArea.bottom-LEGEND_BESIDE_LINE_PX/2);
+    ctx.save();
+    ctx.font=LEGEND_BESIDE_FONT_PX+'px system-ui,sans-serif';
+    ctx.textBaseline='middle';
+    ctx.textAlign='left';
+    entries.forEach(e=>{
+      ctx.fillStyle=e.color;
+      ctx.fillRect(x0,e.y-4,8,8);
       ctx.fillStyle=textColor;
-      ctx.fillText(String(ds.label||''),x0+12,py);
+      ctx.fillText(e.label,x0+12,e.y);
     });
     ctx.restore();
   }
@@ -955,6 +990,7 @@ let xrdLegendPosition='top'; // top | beside
 let legendBesideYMode='xMax'; // baseline | xMax
 let legendBesideYOffsetPx=0;
 let legendBesideXOffsetPx=0;
+let legendBesideDeoverlap=true;   // side legend: shift colliding labels apart by one label height
 const avgSelectUids=new Set();
 let dbFiles=[],dbProjects=[],dbThermalSeries=[],toastTimer=null;
 /* ALBA ExpEnv (.alba) temperature/time log, keyed by frame basename (e.g.
@@ -4018,6 +4054,62 @@ function removeShownFromBasket(){
   renderPatternTree();renderOuterSegmentList();renderCombineSamplePicker();redrawOuterChart();
   toast(`Removed ${drop.length} trace(s)`);
 }
+/** Indices of k roughly evenly spaced items out of n, first and last always included.
+    k >= n returns every index; duplicates (k close to n) collapse. */
+function evenlySpacedIndices(n,k){
+  if(n<=0)return[];
+  if(k>=n)return Array.from({length:n},(_,i)=>i);
+  if(k<=1)return[0];
+  const out=[];
+  for(let i=0;i<k;i++)out.push(Math.round(i*(n-1)/(k-1)));
+  return[...new Set(out)];
+}
+/** Keep the slider and the number box in step while dragging (no redraw yet). */
+function previewBasketThin(v){
+  const shown=basketFilteredSamples().length;
+  const n=Math.min(Math.max(1,Math.round(parseFloat(v)||1)),Math.max(1,shown));
+  const c=document.getElementById('basketThinCount');
+  if(c)c.value=n;
+  const r=document.getElementById('basketThinRange');
+  if(r&&+r.value!==n)r.value=n;
+  const hint=document.getElementById('basketThinHint');
+  if(hint)hint.textContent=shown?`of ${shown}${(n>1&&n<shown)?` · every ~${((shown-1)/(n-1)).toFixed(1)}`:''}`:'';
+}
+/** Thin the active pattern down to ~n evenly spaced traces out of the shown list.
+    Traces the search box is hiding keep their state, and per-trace settings (colour,
+    offsets, legend) survive for the ones that stay — so this is a starting point the
+    user then edits by hand with the individual checkboxes. */
+function applyBasketThin(v){
+  const cmb=getActiveCombine();
+  if(!cmb){toast('Select or create a pattern first');return;}
+  const shown=basketFilteredSamples();
+  if(!shown.length){toast('Nothing shown to thin');return;}
+  const k=Math.min(shown.length,Math.max(1,Math.round(parseFloat(v)||1)));
+  const keep=new Set(evenlySpacedIndices(shown.length,k).map(i=>shown[i].sampleUid));
+  const shownUids=new Set(shown.map(s=>s.sampleUid));
+  if(!Array.isArray(cmb.traces))cmb.traces=[];
+  const dropped=cmb.traces.filter(t=>shownUids.has(t.sampleUid)&&!keep.has(t.sampleUid)).map(t=>t.sampleUid);
+  cmb.traces=cmb.traces.filter(t=>!shownUids.has(t.sampleUid)||keep.has(t.sampleUid));
+  const have=new Set(cmb.traces.map(t=>t.sampleUid));
+  shown.forEach(s=>{
+    if(!keep.has(s.sampleUid)||have.has(s.sampleUid))return;
+    cmb.traces.push({sampleUid:s.sampleUid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0});
+    have.add(s.sampleUid);
+  });
+  dropped.forEach(u=>removeTraceFromDescendants(cmb.id,u));
+  renderPatternTree();renderOuterSegmentList();renderCombineSamplePicker();redrawOuterChart();
+  toast(`Showing ${keep.size} of ${shown.length}`);
+}
+function syncBasketThinUi(shownCount,selectedShown){
+  const r=document.getElementById('basketThinRange');
+  const c=document.getElementById('basketThinCount');
+  const hint=document.getElementById('basketThinHint');
+  const n=Math.max(1,shownCount|0);
+  const cur=Math.min(Math.max(1,selectedShown||n),n);
+  if(r){r.max=n;r.value=cur;r.disabled=!shownCount;}
+  if(c){c.max=n;c.value=cur;c.disabled=!shownCount;}
+  if(hint)hint.textContent=shownCount?`of ${shownCount}`:'';
+}
 function basketSourceSamples(){
   const all=samplesInDisplayOrder();
   const cmb=getActiveCombine();
@@ -4115,8 +4207,8 @@ function renderCombineSamplePicker(){
   if(!el)return;
   const cmb=getActiveCombine();
   const countEl=document.getElementById('basketCount');
-  if(!cmb){el.innerHTML='<div class="empty" style="padding:.4rem">Select or create a pattern</div>';if(countEl)countEl.textContent='';return;}
-  if(!samples.length){el.innerHTML='<div class="empty" style="padding:.4rem">No samples loaded</div>';if(countEl)countEl.textContent='';return;}
+  if(!cmb){el.innerHTML='<div class="empty" style="padding:.4rem">Select or create a pattern</div>';if(countEl)countEl.textContent='';syncBasketThinUi(0,0);return;}
+  if(!samples.length){el.innerHTML='<div class="empty" style="padding:.4rem">No samples loaded</div>';if(countEl)countEl.textContent='';syncBasketThinUi(0,0);return;}
   const tracedUids=new Set((cmb.traces||[]).map(t=>t.sampleUid));
   const parent=patternParent(cmb);
   const src=basketFilteredSamples();
@@ -4124,6 +4216,7 @@ function renderCombineSamplePicker(){
     const total=basketSourceSamples().length;
     countEl.textContent=`${tracedUids.size} sel / ${src.length} shown${src.length!==total?` (of ${total})`:''}`;
   }
+  syncBasketThinUi(src.length,src.filter(s=>tracedUids.has(s.sampleUid)).length);
   if(!src.length){el.innerHTML=`<div class="empty" style="padding:.4rem">${parent?'Parent has no traces to narrow':'No matches'}</div>`;return;}
   el.innerHTML=src.map(s=>{
     const on=tracedUids.has(s.sampleUid);
@@ -4750,7 +4843,7 @@ async function exportCombineChart(format){
 function exportOuterChart(format){exportCombineChart(format);}
 
 function serializeProject(){
-  return{version:5,kind:'xrd_th_db',savedAt:new Date().toISOString(),layout,xrdMode,timeUnit,xrdOffsetMode,xrdGainMode,xrdSourceMode,legendFormatParts:[...legendFormatParts],xrdLegendPosition,legendBesideYMode,legendBesideYOffsetPx,legendBesideXOffsetPx,dbPanelLayout,thermalViewMode,thermalSeriesList,activeThermalSeriesId,combineList,activeCombineId,...readXrdChartSettingsFromDom(),...readCombineChartSettingsFromDom(),samples:samples.map(s=>({...s,timeStart:s.timeStart?s.timeStart.toISOString():null,timeEnd:s.timeEnd?s.timeEnd.toISOString():null}))};
+  return{version:5,kind:'xrd_th_db',savedAt:new Date().toISOString(),layout,xrdMode,timeUnit,xrdOffsetMode,xrdGainMode,xrdSourceMode,legendFormatParts:[...legendFormatParts],xrdLegendPosition,legendBesideYMode,legendBesideYOffsetPx,legendBesideXOffsetPx,legendBesideDeoverlap,dbPanelLayout,thermalViewMode,thermalSeriesList,activeThermalSeriesId,combineList,activeCombineId,...readXrdChartSettingsFromDom(),...readCombineChartSettingsFromDom(),samples:samples.map(s=>({...s,timeStart:s.timeStart?s.timeStart.toISOString():null,timeEnd:s.timeEnd?s.timeEnd.toISOString():null}))};
 }
 function serializeDataOnly(){
   return{version:2,kind:'xrd_th_data',savedAt:new Date().toISOString(),samples:samples.map(s=>({sampleUid:s.sampleUid,name:s.name,rawName:s.rawName,tth:s.tth,intensity:s.intensity,tempStart:s.tempStart,tempEnd:s.tempEnd,timeStart:s.timeStart?s.timeStart.toISOString():null,timeEnd:s.timeEnd?s.timeEnd.toISOString():null,thermalTimeStartOverride:s.thermalTimeStartOverride,thermalTimeEndOverride:s.thermalTimeEndOverride,thermalTempStartOverride:s.thermalTempStartOverride,thermalTempEndOverride:s.thermalTempEndOverride}))};
@@ -4769,6 +4862,7 @@ function hydrateProject(payload,{replace=true}={}){
   else legendBesideYMode='xMax';
   legendBesideYOffsetPx=Number.isFinite(+payload.legendBesideYOffsetPx)?+payload.legendBesideYOffsetPx:0;
   legendBesideXOffsetPx=Number.isFinite(+payload.legendBesideXOffsetPx)?+payload.legendBesideXOffsetPx:0;
+  legendBesideDeoverlap=payload.legendBesideDeoverlap!==false;   // projects saved before this existed default to on
   if(payload.dbPanelLayout==='top'||payload.dbPanelLayout==='sidebar')setDbPanelLayout(payload.dbPanelLayout);
   thermalViewMode=payload.thermalViewMode==='series'?'series':'per';
   thermalSeriesList=Array.isArray(payload.thermalSeriesList)?payload.thermalSeriesList.map(x=>({id:x.id||newSampleUid(),name:x.name||'Series',folderPath:normalizeFolderPath(x.folderPath),memberUids:Array.isArray(x.memberUids)?[...x.memberUids]:[]})).filter(x=>x.memberUids.length):[];
@@ -5013,6 +5107,7 @@ function renderLegendFormatUi(){
     <label class="legend-part"><span>Y anchor</span><select class="txt-sm" id="legendBesideYModeSelect" title="Align each legend label to the trace's baseline offset (intensity at X min / X max), or to its minimum" onchange="setLegendBesideAdj('yMode',this.value)"><option value="xMin">At X min</option><option value="xMax">At X max</option><option value="baseline">Baseline (min)</option></select></label>
     <label class="legend-part"><span>ΔY px</span><input class="num" type="number" step="1" value="${legendBesideYOffsetPx}" title="Global vertical nudge (pixels)" oninput="setLegendBesideAdj('yPx',this.value)"></label>
     <label class="legend-part"><span>ΔX px</span><input class="num" type="number" step="1" value="${legendBesideXOffsetPx}" title="Horizontal offset from plot edge (pixels)" oninput="setLegendBesideAdj('xPx',this.value)"></label>
+    <label class="legend-part" title="Labels that would print on top of each other are shifted apart by one label height, keeping trace order"><input type="checkbox" ${legendBesideDeoverlap?'checked':''} onchange="setLegendBesideAdj('deoverlap',this.checked)">No overlap</label>
   </span>`:'';
   el.innerHTML=`<span class="legend-format-label">Graph legend</span>`+LEGEND_FORMAT_OPTIONS.map(o=>
     `<label class="legend-part"><input type="checkbox" ${parts.has(o.id)?'checked':''} onchange="toggleLegendFormatPart('${o.id}',this.checked)">${esc(o.label)}</label>`
@@ -5027,6 +5122,7 @@ function setLegendBesideAdj(field,value){
   if(field==='yMode')legendBesideYMode=(value==='baseline'||value==='xMin')?value:'xMax';
   else if(field==='yPx')legendBesideYOffsetPx=Number.isFinite(n)?n:0;
   else if(field==='xPx')legendBesideXOffsetPx=Number.isFinite(n)?n:0;
+  else if(field==='deoverlap')legendBesideDeoverlap=!!value;
   redrawXrd();
   redrawOuterChart();
 }
