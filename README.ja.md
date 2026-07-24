@@ -14,11 +14,11 @@ HTML 1 ファイル完結（ビルド不要・インストール不要）。
 
 | OS | ダブルクリックするファイル |
 |----|--------------------------|
-| macOS | `XRD-localhost.command` |
-| Windows | `XRD-localhost.bat` |
-| Linux | `XRD-localhost.sh` |
+| macOS | `launchers/XRD-localhost.command` |
+| Windows | `launchers/XRD-localhost.bat` |
+| Linux | `launchers/XRD-localhost.sh`（`bash launchers/XRD-localhost.sh`） |
 
-このフォルダで `python3 -m http.server 8753` を起動し、
+いずれも**リポジトリ直下**を `python3 -m http.server 8753` で配信し、
 `http://localhost:8753/xrd_analyzer_v19.html` を開きます。
 
 **`file://` で開かないこと。** 読み込んだファイルとプロジェクトは IndexedDB に入りますが、

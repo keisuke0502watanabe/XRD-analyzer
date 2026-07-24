@@ -12,7 +12,7 @@ REM =====================================================================
 setlocal
 set PORT=8753
 set FILE=xrd_analyzer_v19.html
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 REM Start a static server in its own minimized window (leave it open while you use the app).
 REM Tries "python" first, then the "py" launcher.

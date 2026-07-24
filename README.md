@@ -14,11 +14,11 @@ Older builds are in [`old-version/`](old-version/); design notes are in [`docs/`
 
 | OS | File to double-click |
 |----|----------------------|
-| macOS | `XRD-localhost.command` |
-| Windows | `XRD-localhost.bat` |
-| Linux | `XRD-localhost.sh` |
+| macOS | `launchers/XRD-localhost.command` |
+| Windows | `launchers/XRD-localhost.bat` |
+| Linux | `launchers/XRD-localhost.sh` (`bash launchers/XRD-localhost.sh`) |
 
-It starts `python3 -m http.server 8753` in this folder and opens
+Each one serves the **repo root** with `python3 -m http.server 8753` and opens
 `http://localhost:8753/xrd_analyzer_v19.html`.
 
 **Use this, not `file://`.** The app keeps your cached files and projects in IndexedDB; on a

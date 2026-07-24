@@ -2,7 +2,7 @@
 # =====================================================================
 #  XRD Analyzer - open on http://localhost  (Linux / generic)
 #
-#  Run:  bash XRD-localhost.sh    (or make executable: chmod +x, then ./)
+#  Run:  bash launchers/XRD-localhost.sh   (from the repo root; or chmod +x and ./)
 #
 #  Why: opening the app as file:// lets the browser evict the IndexedDB
 #  cache (your DB / projects). http://localhost is a proper origin, so
@@ -11,7 +11,7 @@
 PORT=8753
 FILE=xrd_analyzer_v19.html
 
-cd "$(dirname "$0")" || exit 1
+cd "$(dirname "$0")/.." || exit 1   # serve the repo root, not launchers/
 
 if curl -s -o /dev/null "http://127.0.0.1:$PORT/$FILE"; then
   echo "Server already running on http://localhost:$PORT"
