@@ -7,9 +7,9 @@
 #  origin, so the browser keeps the data far more reliably.
 # =====================================================================
 PORT=8753
-FILE=xrd_analyzer_v18.html
+FILE=xrd_analyzer_v19.html
 
-cd "$(dirname "$0")" || exit 1
+cd "$(dirname "$0")/.." || exit 1   # serve the repo root, not launchers/
 
 # Start a static server for this folder if one isn't already running.
 if curl -s -o /dev/null "http://127.0.0.1:$PORT/$FILE"; then

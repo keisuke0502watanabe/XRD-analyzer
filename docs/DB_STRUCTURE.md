@@ -1,6 +1,6 @@
 # IndexedDB Structure (`xrd_analyzer_db_th`)
 
-Current app reference: `xrd_analyzer_v16.html` (v15 = last version before the feature DB)  
+Current app reference: `xrd_analyzer_v19.html` (v18 = last version before the dataset-name identity)  
 Database name: `xrd_analyzer_db_th`  
 Version: `5`
 
@@ -13,7 +13,33 @@ Version: `5`
 Main fields:
 - `id: number`
 - `name: string`  
-  File name used as primary identity in many merge/skip checks.
+  **Original file name — never rewritten.** The parsers, .ras/.dat header regeneration,
+  ALBA frame/ExpEnv matching and the external re-integration scripts all key off it.
+- `datasetName: string` (v19+)  
+  Import-time display identity, `<seq>_<sample>_<temp>_<date>_<filename>`, e.g.
+  `0007_PLA-A_120C_20260715_rayonix_iso_002_0000.dat`. Empty parts are dropped rather than
+  left as `__` gaps. Shown in the DB list/tree, searchable in the text filter, available as
+  a legend part and a tree grouping field. Composed by `buildDatasetName()`.
+- `datasetSeq: number` (v19+) — 4-digit running number, allocated from `appState.datasetSeq`.
+  Unique on its own, so two files that merely share a filename can never collapse into one
+  row. Never re-issued: a record keeps its sequence across metadata edits.
+- `datasetNameLocked: boolean` (v19+) — `true` when the user typed the name by hand in the
+  file-meta modal. Every regeneration pass (bulk edit, backfill) skips those rows.
+- `measurementKey: string` (v19+, pyFAI `.dat` only) — `<scan folder>/<frame base>`, the
+  detector frame this pattern came from, independent of how it was integrated. Taken from
+  `# source: RAW/…/frame.edf` (re-integration output) or from the `# --> …` path with a
+  trailing `LaVue1D`-style output segment dropped (beamline output). `''` for lab formats.
+- `processingKey: string` (v19+) — `quickHash` of the calibration header lines
+  (`poni:` / `Distance` / `PONI:` / `Rotations:` / `Detector` / `Wavelength:` /
+  `Mask applied:` / `Polarization factor:` / `Normalization factor:`). Same frame + same
+  `processingKey` = the same .dat twice; same frame + different key = a re-integration.
+- `supersededBy: number | null` (v19+) — id of the newer integration that replaced this
+  record. Set automatically, never deletes anything; superseded rows are hidden from the DB
+  list until **Superseded** is ticked in the filter row.
+- `supersededAt: string | null` (v19+, ISO datetime)
+- `contentHash: string | null` — cyrb53 hash of `rawText` (`quickHash`). Together with `name`
+  it forms `fileIdentityKey()`, the merge/dedup identity. HDF5 payloads fall back to the name
+  alone. Legacy rows are hashed on the fly and stamped by `backfillDatasetNames()`.
 - `rawText: string`
   - Plain text payload for `.ras`, `.scn`, `.xrdml`, `.dat`
   - `__HDF5_BASE64__...` for cached HDF5 binary
@@ -32,8 +58,23 @@ Main fields:
 - `savedAt: string` (ISO datetime; auto-set on `saveFile`)
 
 Notes:
-- `saveFile()` always overwrites `savedAt` with current timestamp.
-- Duplicate checks are often name-based (`name`).
+- `saveFile()` always overwrites `savedAt` with the current timestamp;
+  `saveFileKeepDate()` keeps the record's own `savedAt` and is what the one-off backfills use,
+  so stamping a new field onto every legacy row does not reset the whole cache's dates.
+- **Three tiers of identity** — only tier 1 ever drops incoming data:
+
+  | tier | key | meaning | action |
+  |---|---|---|---|
+  | 1 | `name` + `contentHash` (`fileIdentityKey`) | byte-identical file | skip |
+  | 2 | `measurementKey` equal, content different | same frame, re-integrated | import, and mark the older record `supersededBy` |
+  | 3 | `name` equal only | same frame index from another scan | keep both; listed under *Name collisions* |
+
+- **Duplicate checks are `name` + `contentHash` (`fileIdentityKey`), never the name alone.**
+  Up to v18 the DB Import merge matched on `name` only, so an incoming record whose filename
+  already existed here was skipped even when its data differed — that is how records went
+  missing. Use **DB audit** to list what a backup dump holds that this DB does not.
+- `folderPath` comes from the pyFAI `.dat` header (`# --> …`) when present; otherwise, when a
+  whole folder is dropped, from the File's `webkitRelativePath` directory (v19+).
 - `instrument` is auto-filled at import from the parsed file (`.ras` → `Rigaku SmartLab`;
   HDF5 → NeXus `instrument/name`, canonicalised to `Anton Paar`). `.scn`/`.xrdml` carry no
   instrument, so they import as `''`. `site` has no in-file source and is always entered by hand
@@ -84,6 +125,8 @@ Main fields:
 
 Current keys:
 - `autoBackupDir` — `FileSystemDirectoryHandle` for the auto-backup folder (Chrome/Edge).
+- `datasetSeq` — high-water mark of `files.datasetSeq`, so a sequence number is never reused
+  after records are deleted.
 
 ### 5) `xrdFeatures`
 - Key: `id` (autoIncrement)
@@ -92,7 +135,11 @@ Current keys:
 - Indexes: `sampleName`, `sampleUid`, `phase`, `peakType`, `two_theta` (`two_theta_deg`).
 
 Main fields:
-- Linkage: `id`, `fileName`, `sampleUid` (stable key), `sampleName`, `tempC` (denormalized).
+- Linkage: `id`, `fileName`, `fileDbId` (v19+), `processingKey` (v19+), `sampleUid`,
+  `sampleName`, `tempC` (denormalized). `fileName` alone is ambiguous — delete a file and
+  re-upload the same name and its old peaks would re-attach to the new data — so v19+ rows
+  pin to a DB record by `fileDbId` and record which integration they were fitted on.
+  Pre-v19 rows have neither and fall back to `fileName`.
 - `peakType`: `'bragg'` | `'halo'`.
 - Position/intensity: `two_theta_deg`, `d_nm`, `intensity_cps` (net height above baseline),
   `area_cps_deg`, `rel_intensity` (null in Phase 1).
@@ -124,7 +171,8 @@ Chrome/Edge only (File System Access API). Lets the cache survive a browser-cach
 
 ## Full DB export (`exportFullDb`)
 Structure:
-- `version: 3` (was 2 before the feature DB)
+- `version: 4` (3 before the dataset-name fields, 2 before the feature DB). Older dumps import
+  fine — the missing `datasetName` / `datasetSeq` / `contentHash` are filled in on merge.
 - `app: 'xrd_th'` — app discriminator (DSC dumps use `'dsc'`)
 - `exportedAt: string`
 - `files: files[]`
@@ -135,14 +183,43 @@ Structure:
 ## Full DB import (`importFullDb`)
 - Rejects a dump whose `app` is present and not `'xrd_th'` (avoids cross-app corruption); dumps without `app` are still accepted (legacy)
 - Supports **replace** or **merge**
+- Reports `+N added · N identical (skipped) · N kept separately despite a shared filename`
+  so a silent drop cannot go unnoticed
 - Merge skip rules:
-  - `files`: skip if same `name`
+  - `files`: skip only if same `fileIdentityKey` = `name` + `contentHash` (HDF5: `name` alone).
+    An incoming record whose `datasetName` is already taken here is re-numbered instead of
+    being dropped.
   - `projects`: skip if same `name` and `savedAt`
   - `thermalSeries`: skip if same `name` and `savedAt`
   - `xrdFeatures`: skip if same `featureDedupKey` = `sampleUid|peakType|two_theta_deg|computedAt`
 
+## Backup audit (`runDbAudit`, v19+)
+
+**DB audit** button next to *Find dupes*. Reads one or more `xrd_th_db_*.json` backups and
+lists every file record they hold that is not in the current DB, matched by `fileIdentityKey`.
+Read-only — nothing is written; re-import the dump with v19+ to bring the records back.
+Exists because merges before v19 dropped same-named records silently.
+
+## Bulk delete (`deleteDbBulkSelected`, v19+)
+
+**Delete from DB…** in the bulk edit modal removes every file in the basket (or in the
+post-upload target list). Built for re-uploading a batch whose integration was wrong.
+Confirms twice: the file list, then — when peaks were extracted from those files — whether
+to delete the linked feature rows as well. Also clears the basket, drops the loaded samples
+and their traces, and re-reads the DB to verify the rows are gone.
+
+## Duplicate finder (`openDupFinder`)
+
+Two sections:
+- **Duplicates** — same `name` AND identical `rawText`. Oldest copy kept, extras deletable.
+- **Name collisions** — same `name` but different content. Separate measurements, listed for
+  information only and never deleted; each row links to its file-meta editor.
+
 ## Project JSON (`serializeProject`)
 - Separate from full DB dump
+- `ensureProjectSamplesCached()` treats "same filename AND same point count" as already
+  cached (a project sample is a reconstruction, so its `__PROJECT_SAMPLE_JSON__` payload never
+  matches the original file text)
 - On project load, missing file-cache records can be synthesized into `files` using:
   - `buildProjectCacheRecordFromSample()`
   - Encoded payload marker: `__PROJECT_SAMPLE_JSON__`
@@ -161,6 +238,7 @@ Structure:
 ## DB Tree UI Metadata (from `files`)
 
 The DB cache tree can group by:
+- `dataset` -> `datasetName`
 - `sample` -> `sampleLabel`
 - `capillary` -> `capillarySize`
 - `measTime` -> `measurementTimeMin`
@@ -171,7 +249,8 @@ The DB cache tree can group by:
 
 ## DB File Filter (`dbFileFilter`)
 
-- `text` — matches `name`, `sampleLabel`, `instrument`, `site`
+- `text` — matches `name`, `datasetName`, `sampleLabel`, `instrument`, `site`, `folderPath`
+- `showSuperseded` — off by default; rows with `supersededBy != null` are hidden until ticked
 - `tags`, `tempMin`, `tempMax`
 - `instrument`, `site` — dropdowns built from `INSTRUMENT_PRESETS`/`SITE_PRESETS` plus every value
   present in the cache; the `(unset)` entry (`DB_FILTER_NONE`) selects records with the field empty
