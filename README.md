@@ -1,90 +1,117 @@
 # XRD-analyzer
 
-Browser app for viewing XRD data and thermal history together (Anton Paar, Rigaku, etc.).
+Browser app for viewing XRD data and thermal history together (Anton Paar, Rigaku, ALBA, etc.).
+Single self-contained HTML file — no build step, no install.
 
 **日本語:** [README.ja.md](README.ja.md)
 
-**Current version:** [`xrd_analyzer_db_TH_v4.html`](xrd_analyzer_db_TH_v4.html)  
-Older builds (v1–v3, `FORLAURA`, …) are in [`old-version/`](old-version/).
+**Current version:** [`xrd_analyzer_v19.html`](xrd_analyzer_v19.html)
+Older builds are in [`old-version/`](old-version/); design notes are in [`docs/`](docs/).
 
 ## How to run
 
-### Easiest (open the HTML file directly)
+### Recommended — the localhost launcher
 
-1. Double-click `xrd_analyzer_db_TH_v4.html` in Finder  
-   - Or drag the file into **Chrome**, **Safari**, or **Edge**  
-2. When the app opens, use **Load Files** as usual  
+| OS | File to double-click |
+|----|----------------------|
+| macOS | `XRD-localhost.command` |
+| Windows | `XRD-localhost.bat` |
+| Linux | `XRD-localhost.sh` |
 
-For RAS and plain text formats only, this is often enough.
+It starts `python3 -m http.server 8753` in this folder and opens
+`http://localhost:8753/xrd_analyzer_v19.html`.
 
-### When using HDF5 (recommended)
+**Use this, not `file://`.** The app keeps your cached files and projects in IndexedDB; on a
+`file://` page the browser may evict that store under disk pressure, and `.hdf5` import needs a
+real origin. See [`docs/HOW-TO-OPEN.md`](docs/HOW-TO-OPEN.md) for the full reasoning and for the
+data-safety checklist (auto-backup folder, JSON export).
 
-For `.hdf5` import and reliable charts, use a local server:
+### Manual equivalent
 
 ```bash
-cd /path/to/XRD-analyzer
-python3 -m http.server 8765
+python3 -m http.server 8753
 ```
 
-Open in your browser: `http://localhost:8765/xrd_analyzer_db_TH_v4.html`
+Then open `http://localhost:8753/xrd_analyzer_v19.html`.
 
 ### If something goes wrong
 
-- Blank page → reopen via the **local server** above  
-- Use a **normal browser**, not an embedded IDE preview  
+- Blank page → reopen through the launcher / local server above
+- Use a **normal browser** (Chrome, Edge, Safari), not an embedded IDE preview
+- Data missing after an import → **DB & Projects → DB audit**, which lists what a backup JSON
+  holds that the current DB does not
 
 ## Supported files
 
 | Format | Example |
 |--------|---------|
-| HDF5 | `.hdf5` (NeXus / Anton Paar) |
+| HDF5 | `.hdf5`, `.h5` (NeXus / Anton Paar) |
 | RAS | `.ras` (Rigaku SmartLab) |
-| Other | `.scn`, `.xrdml` |
+| pyFAI / ALBA | `.dat`, `.alba` (+ ExpEnv text for the temperature log) |
+| Other | `.scn`, `.xrdml`, `.txt` |
+
+## Tabs
+
+| Tab | What it is for |
+|-----|----------------|
+| **DB & Projects** | Cached files, tree/filters, file metadata, projects, DB import / audit / backup |
+| **Thermal History** | Temperature vs time per sample or per series; I(θ) vs time |
+| **Patterns** | The plotting workspace — basket → pattern tree → overlay/stack chart → PNG/PDF |
+| **Samples** | One row per loaded file: offsets, gains, times, temperature overrides |
+| **Feature DB** | Pseudo-Voigt peak fitting → 2θ / FWHM / integrated intensity / Scherrer size, saved per peak |
 
 ## Basic workflow
 
 ### 1. Load data
 
-- **Load Files** (top bar), **+ Load** (sidebar), or drag-and-drop  
-- HDF5 provides **measurement start/end times**  
-- **Temperature** defaults from the filename (e.g. `80.0C`, `-40.0C`); edit under **Thermal / segments → T (°C)** if needed  
+- **Load Files** in the top bar, or drag-and-drop files (a whole folder works too)
+- HDF5 supplies **measurement start/end times**; ALBA ExpEnv logs supply the temperature
+- **Temperature** otherwise comes from the filename (e.g. `80.0C`, `-40.0C`) and is editable
+  per sample in **Samples**
+- Every import gets a **dataset name** `<seq>_<sample>_<temp>_<date>_<filename>` so two files
+  that merely share a filename stay separate records
 
-### 2. Create a thermal Series
+### 2. Build a pattern
 
-1. **Thermal History** → **Edit series**  
-2. Check samples in **measurement order** (top = first) → **Apply**  
-   - Or **Series from all** to add all samples at once  
-3. **Mode → Series**, then pick the series in the dropdown  
-4. X-axis units: **date** / **sec** / **min** / **hour**  
+1. **Patterns → + Root** creates a pattern, then tick traces in the **Basket** (works across series)
+2. **+ Child (narrow)** copies the active pattern so you can narrow it further — patterns form a tree
+3. Each pattern keeps its own chart settings (mode, offsets, axis ranges, labels)
 
-### 3. XRD patterns
+### 3. Chart controls
 
-- **XRD Pattern** shows all samples, or **Data source → Active series** for series members only  
-- Adjust axes, legend, and colors in the panel  
+- **Mode**: Overlay or Stack; Offset% / Gain% either equal for all traces or per trace
+- **X mode**: `2theta (deg)` / `d (nm)` / `nm^-1` / `q (nm^-1)` — q uses each file's own wavelength
+- **X scale / Y scale**: Linear or **Log** (log is what you want when q spans SAXD→WAXD, or for
+  intensities covering decades; non-positive points are dropped)
+- **Export displayed chart**: PNG / PDF
 
-### 4. Combine (overlay multiple patterns)
+### 4. Thermal history
 
-1. In **Combine**, click **+ From series** (or **+ New** and link a **Series**)  
-2. Choose the active **Combine** from the dropdown  
-3. XRD traces appear in series member order (edit legend, color, offsets in the list below)  
+1. **Thermal History → Edit series**, check samples in measurement order → **Apply**
+2. **Mode → Series** and pick the series; X axis in date / sec / min / hour
+3. **I(θ)** mode plots the intensity at a chosen 2θ against time
 
-You can create **multiple Combines** (e.g. one per temperature profile).
+### 5. Peak features
 
-### 5. Save
+**Feature DB** → pick a sample, click near a peak (or **Auto-suggest**), **Fit** → **Save**.
+Pseudo-Voigt gives 2θ, FWHM, integrated intensity, d and Scherrer size (with optional
+instrumental FWHM correction). Saved rows are filterable and exportable as CSV.
+
+### 6. Save
 
 | Action | What it does |
 |--------|----------------|
-| **Save Project** | Save samples, series, combines, axis settings, etc. to the built-in DB |
+| **Save Project** | Save samples, series, patterns and chart settings into the built-in DB |
 | **Export JSON** | Export the project to a JSON file |
 | **Import JSON** | Restore from JSON |
-| Left sidebar | Cached files and thermal series in the DB |
+| **Choose backup folder** | Auto-save a dated JSON dump on every change (Chrome / Edge) |
 
-## Troubleshooting
+## Docs
 
-- **Empty thermal chart** → Series selected? Start/end times and T set on each sample?  
-- **Empty combine** → Combine created and **Series** linked?  
-- **No graphs** → Try the local server; check sample visibility (eye icon)  
+- [`docs/HOW-TO-OPEN.md`](docs/HOW-TO-OPEN.md) — localhost vs `file://`, data safety
+- [`docs/DB_STRUCTURE.md`](docs/DB_STRUCTURE.md) — IndexedDB stores and fields
+- [`docs/FEATURE_DB_DESIGN.md`](docs/FEATURE_DB_DESIGN.md) — peak-feature DB design notes
 
 ## License
 
-Use and modify according to the repository owner’s terms.
+Use and modify according to the repository owner's terms.
