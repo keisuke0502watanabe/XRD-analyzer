@@ -2369,6 +2369,15 @@ async function applyAlbaExpEnv(newMap){
 /** True for an ALBA pyFAI frame filename ("pilatus_*"/"rayonix_*"). */
 function isAlbaFrameName(name){return /^(pilatus|rayonix)_/i.test(albaBaseName(name));}
 
+/** Detector-type tag for a parsed ALBA frame: 'WAXS' (Rayonix/WAXD) or 'SAXS'
+    (Pilatus/SAXD), or null when the frame isn't ALBA or the type can't be told.
+    Judged from the parsed detector/instrument, falling back to the frame filename. */
+function albaDetectorTypeTag(p,fname){
+  if(!(p&&p.meta&&p.meta.albaQ))return null;
+  const from=s=>{const t=_albaTypeFromStr(String(s||''));return t==='waxs'?'WAXS':(t==='saxs'?'SAXS':null);};
+  return from(p.meta.detector)||from(p.meta.instrument)||from(fname)||null;
+}
+
 /** Detector-stripped frame index key, e.g. "pilatus_iso_-51_000_0000" → "iso_-51_000_0000". */
 function albaFrameKey(name){return albaBaseName(name).replace(/^(pilatus|rayonix)_/i,'');}
 
@@ -3127,7 +3136,11 @@ function handleFiles(fileList){
       const isAlbaDat=!!(p.meta&&p.meta.albaQ)&&typeof raw==='string';
       const measurementKey=isAlbaDat?albaMeasurementKey(raw,f.name):'';
       const processingKey=isAlbaDat?albaProcessingKey(raw):'';
-      const dbPayload={name:f.name,rawText,contentHash,rowCount:p.tth.length,folderPath:folderForDb,tempC:tempCForDb,sampleLabel:'',tags:[],instrument:instrumentForDb,site:siteForDb,lambdaA:lambdaForDb,capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null,uploadedAt:new Date().toISOString()};
+      /* ALBA frames carry their detector type: tag WAXS (Rayonix) / SAXS (Pilatus)
+         at import so the DB list is filterable/groupable by scattering regime. */
+      const albaTypeTag=albaDetectorTypeTag(p,f.name);
+      const initialTags=albaTypeTag?[albaTypeTag]:[];
+      const dbPayload={name:f.name,rawText,contentHash,rowCount:p.tth.length,folderPath:folderForDb,tempC:tempCForDb,sampleLabel:'',tags:initialTags,instrument:instrumentForDb,site:siteForDb,lambdaA:lambdaForDb,capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null,uploadedAt:new Date().toISOString()};
       /* Import-time identity. sampleLabel is still blank here — the post-upload bulk edit
          regenerates the name once the user fills it in (see confirmDbBulkEdit). */
       dbPayload.measurementKey=measurementKey;
@@ -3138,6 +3151,7 @@ function handleFiles(fileList){
       p.datasetName=dbPayload.datasetName;
       p.meta=p.meta||{};
       p.meta.instrument=instrumentForDb;
+      if(albaTypeTag)p.meta.tags=normalizeTags([...(p.meta.tags||[]),albaTypeTag]);
       try{const newId=await adapter.saveFile(dbPayload);if(newId!=null){p.dbId=newId;batchNewIds.push(newId);batchNewRecs.push({...dbPayload,id:newId});}}
       catch(err){console.error(err);toast('DB save: '+(err.message||err));}
     }catch(e){console.error(e);toast(`Processing error: ${f.name} - ${e.message||e}`);}
