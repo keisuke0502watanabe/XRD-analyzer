@@ -615,12 +615,16 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
           <div class="panel-head" style="margin-top:12px;display:flex;align-items:center">
             <span class="panel-title">Saved features</span>
             <span id="featSavedCount" style="font-size:10px;color:var(--text3);margin-left:8px"></span>
+            <span id="featCiteSummary" style="font-size:10px;margin-left:10px"></span>
             <button type="button" class="btn" style="margin-left:auto" onclick="exportFeaturesCsv()">CSV</button>
+            <button type="button" class="btn" onclick="exportInterpretationsCsv()" title="Export the interpretation log — author, timestamp, confidence and citation status per entry">Log CSV</button>
           </div>
           <div class="feat-controls xrd-controls" style="margin-top:6px;font-size:10px">
             <span style="color:var(--text3)">Quality filter</span>
             <span id="featQualChips" style="display:inline-flex;gap:4px;flex-wrap:wrap"></span>
+            <button type="button" class="qual-chip" id="featCiteChip" onclick="featToggleCiteFilter()" style="margin-left:8px" title="Show only peaks whose log quotes a published number that has not been checked against the primary source">⚠ Unverified citations</button>
           </div>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">Click a row to replay its fit (which 2θ range was used, what the curve looked like) and to read or write its interpretation log.</div>
           <div id="featSavedList" class="feat-saved-list" style="overflow:auto;font-size:11px;margin-top:6px"></div>
         </div>
       </div>
@@ -837,6 +841,48 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
     </div>
   </div>
 </div>
+<div id="featDetailModal" class="modal-bg">
+  <div class="modal" style="min-width:900px;max-width:96vw;max-height:92vh;overflow:auto">
+    <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:.35rem">
+      <span style="font-size:13px;font-weight:600">Feature detail — fit provenance &amp; interpretation log</span>
+      <span id="featDetailTitle" style="font-size:11px;color:var(--text2)"></span>
+      <button class="btn" style="margin-left:auto" onclick="closeFeatDetail()">Close</button>
+    </div>
+    <div id="featDetailWarn" style="display:none;font-size:10px;line-height:1.5;margin-bottom:.45rem;padding:5px 8px;border-radius:4px;border:1px solid var(--warn);color:var(--warn)"></div>
+    <div class="feat-controls xrd-controls" style="margin-bottom:4px">
+      <label style="font-size:11px"><input type="radio" name="featDetailMode" value="single" checked onchange="featDetailSetMode('single')"> This fit only</label>
+      <label style="font-size:11px"><input type="radio" name="featDetailMode" value="all" onchange="featDetailSetMode('all')"> All fits on this data</label>
+      <span style="font-size:10px;color:var(--text3)">The shaded band is the 2θ range each fit actually used — everything outside it was discarded. The curve replays the <b>saved</b> parameters; it is not re-fitted.</span>
+    </div>
+    <div style="position:relative;height:320px;border:1px solid var(--border);border-radius:6px;padding:4px">
+      <canvas id="featDetailCanvas"></canvas>
+    </div>
+    <div id="featDetailLegend" style="font-size:10px;margin-top:5px"></div>
+    <div id="featDetailNums" style="display:flex;flex-wrap:wrap;gap:13px;font-size:11px;padding:7px 2px;color:var(--text2);border-bottom:1px solid var(--border)"></div>
+
+    <div style="margin-top:.65rem;display:flex;align-items:center;gap:8px">
+      <span style="font-size:12px;font-weight:600">Interpretation log</span>
+      <span id="featLogCount" style="font-size:10px;color:var(--text3)"></span>
+      <label style="font-size:10px;color:var(--text3);margin-left:auto;white-space:nowrap"><input type="checkbox" id="featLogShowSuperseded" onchange="featRenderLog()"> show superseded</label>
+    </div>
+    <div id="featLogList" style="margin-top:5px"></div>
+
+    <div style="margin-top:.55rem;border-top:1px solid var(--border);padding-top:.55rem">
+      <div class="feat-controls xrd-controls" style="margin-bottom:5px;flex-wrap:wrap">
+        <label title="Who is making this statement. Kept separate so that months later there is no doubt whether a reading was yours or the model's.">Author<select id="featLogAuthor" class="txt-sm"><option value="keisuke">keisuke</option><option value="claude">claude</option></select></label>
+        <label title="Your own confidence in this statement. Optional.">Confidence<select id="featLogConf" class="txt-sm"><option value="">—</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select></label>
+        <label style="font-size:11px" title="Tick when the statement quotes a number from the literature (transition temperature, lattice constant, …). It is filed as UNVERIFIED until you have seen the primary source yourself."><input type="checkbox" id="featLogCite" onchange="featLogToggleCite()"> cites a published number</label>
+        <input class="txt-sm" id="featLogCiteSrc" placeholder="source (DOI / reference)" style="display:none;min-width:230px">
+      </div>
+      <textarea id="featLogContent" rows="3" placeholder="What does this peak mean, and why? Write the reasoning, not just the conclusion." style="width:100%;box-sizing:border-box;font-size:11px;line-height:1.5;padding:6px 7px;border:1px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text);font-family:inherit;resize:vertical"></textarea>
+      <div class="ctrl-row" style="justify-content:flex-end;gap:6px;margin-top:.4rem;align-items:center">
+        <span id="featLogSupersedeNote" style="display:none;font-size:10px;color:var(--warn);margin-right:auto"></span>
+        <button type="button" class="btn" id="featLogCancelBtn" style="display:none" onclick="featLogCancelSupersede()">Cancel correction</button>
+        <button type="button" class="btn green" onclick="featLogAdd()">Add entry</button>
+      </div>
+    </div>
+  </div>
+</div>
 <div id="toast" class="toast"></div>
 
 <script>
@@ -1045,7 +1091,7 @@ let seriesEditorTargetId=null;
 let seriesDraftOrder=[];
 
 const DB_NAME='xrd_analyzer_db_th';
-const DB_VERSION=5;
+const DB_VERSION=6;
 
 class IndexedDBAdapter{
   constructor(){this.db=null;}
@@ -1066,6 +1112,15 @@ class IndexedDBAdapter{
           fs.createIndex('phase','phase',{unique:false});
           fs.createIndex('peakType','peakType',{unique:false});
           fs.createIndex('two_theta','two_theta_deg',{unique:false});
+        }
+        /* v6: interpretation log. One row = one dated statement about one feature.
+           linked_feature_id holds the feature's STABLE featUid, never its autoIncrement
+           id — import reassigns those, which would silently detach every log entry. */
+        if(!db.objectStoreNames.contains('interpretations')){
+          const is=db.createObjectStore('interpretations',{keyPath:'id',autoIncrement:true});
+          is.createIndex('linked_feature_id','linked_feature_id',{unique:false});
+          is.createIndex('author','author',{unique:false});
+          is.createIndex('timestamp','timestamp',{unique:false});
         }
       };
       req.onsuccess=e=>{this.db=e.target.result;res(this.db);};
@@ -1142,6 +1197,10 @@ class IndexedDBAdapter{
   saveFeature(o){return this.tx('xrdFeatures','readwrite',st=>st.put(o));}
   deleteFeature(id){return this.tx('xrdFeatures','readwrite',st=>st.delete(id));}
   clearFeatures(){return this.tx('xrdFeatures','readwrite',st=>st.clear());}
+  listInterpretations(){return this.listAllWithKeys('interpretations');}
+  saveInterpretation(o){return this.tx('interpretations','readwrite',st=>st.put(o));}
+  deleteInterpretation(id){return this.tx('interpretations','readwrite',st=>st.delete(id));}
+  clearInterpretations(){return this.tx('interpretations','readwrite',st=>st.clear());}
 }
 const adapter=new IndexedDBAdapter();
 
@@ -6740,9 +6799,12 @@ async function buildDbExportPayload(){
   try{thermalSeriesPresets=await adapter.listThermalSeries();}catch(_e){thermalSeriesPresets=[];}
   let xrdFeatures=[];
   try{xrdFeatures=await adapter.listFeatures();}catch(_e){xrdFeatures=[];}
+  let interpretations=[];
+  try{interpretations=await adapter.listInterpretations();}catch(_e){interpretations=[];}
   /* version 4 = records carry datasetName/datasetSeq/contentHash. Older dumps import
-     fine: the missing fields are filled in on merge. */
-  return {version:4,app:'xrd_th',exportedAt:new Date().toISOString(),files:await adapter.listFiles(),projects:await adapter.listProjects(),thermalSeriesPresets,xrdFeatures};
+     fine: the missing fields are filled in on merge.
+     version 5 = adds the interpretation log (keyed to features by featUid). */
+  return {version:5,app:'xrd_th',exportedAt:new Date().toISOString(),files:await adapter.listFiles(),projects:await adapter.listProjects(),thermalSeriesPresets,xrdFeatures,interpretations};
 }
 async function exportFullDb(){
   downloadText(`xrd_th_db_full_${stamp()}.json`,JSON.stringify(await buildDbExportPayload(),null,2));toast('DB exported');
@@ -6841,7 +6903,7 @@ const autoBackup={
     try{
       const payload=await buildDbExportPayload();
       // Don't clobber existing backups with an empty snapshot (e.g. after an accidental Clear).
-      if(!payload.files.length&&!payload.projects.length&&!payload.thermalSeriesPresets.length&&!(payload.xrdFeatures||[]).length){
+      if(!payload.files.length&&!payload.projects.length&&!payload.thermalSeriesPresets.length&&!(payload.xrdFeatures||[]).length&&!(payload.interpretations||[]).length){
         if(announce)toast('Nothing to back up (DB is empty).');
         return;
       }
@@ -6934,6 +6996,7 @@ async function importFullDb(file){
       const existingProjects=replace?[]:await adapter.listProjects();
       const existingTs=replace?[]:(await adapter.listThermalSeries().catch(()=>[]));
       const existingFeat=replace?[]:(await adapter.listFeatures().catch(()=>[]));
+      const existingInterp=replace?[]:(await adapter.listInterpretations().catch(()=>[]));
       /* Files merge on name+CONTENT (fileIdentityKey), never on the filename alone.
          The old name-only rule silently dropped every incoming frame whose filename
          already existed here, even when the data differed — that is how records went
@@ -6999,6 +7062,25 @@ async function importFullDb(file){
           seenFeat.add(featureDedupKey(ft));
         }
       }
+      /* Interpretation log. Rows point at features by featUid, so they survive the
+         autoIncrement-id reshuffle above and re-attach on their own. Entries whose
+         feature is absent are still imported — deleting a peak should not destroy the
+         written record of why it was once interpreted a certain way. */
+      const interps=payload.interpretations;
+      let iAdded=0,iOrphan=0;
+      if(Array.isArray(interps)){
+        const featUids=new Set((await adapter.listFeatures().catch(()=>[])).map(f=>f&&f.featUid).filter(Boolean));
+        const seenInterp=new Set(existingInterp.map(x=>interpretationDedupKey(x)));
+        for(const it of interps){
+          if(!it||typeof it!=='object')continue;
+          if(!replace&&seenInterp.has(interpretationDedupKey(it)))continue;
+          const {id:_i,...rest}=it;
+          await adapter.saveInterpretation(rest);
+          seenInterp.add(interpretationDedupKey(it));
+          iAdded++;
+          if(rest.linked_feature_id&&!featUids.has(rest.linked_feature_id))iOrphan++;
+        }
+      }
       await refreshDbPanels();
       try{await refreshFeatureDb();}catch(_e){}
       const total=(typeof dbFiles!=='undefined'&&dbFiles)?dbFiles.length:'?';
@@ -7006,6 +7088,7 @@ async function importFullDb(file){
         +(fSkipped?` · ${fSkipped} identical (skipped)`:'')
         +(fCollision?` · ${fCollision} kept separately despite a shared filename`:'')
         +(fSuperseded?` · ${fSuperseded} superseded by a newer integration`:'')
+        +(iAdded?` · +${iAdded} interpretation(s)`+(iOrphan?` (${iOrphan} with no matching feature)`:''):'')
         +` — cache now holds ${total} files`;
       console.info(report);
       toast(report);
@@ -7016,6 +7099,12 @@ async function importFullDb(file){
 /** Merge key for feature rows: same sample+peak+analysis time = duplicate. */
 function featureDedupKey(f){
   return [f.sampleUid||f.sampleName||'',f.peakType||'bragg',f.two_theta_deg!=null?(+f.two_theta_deg).toFixed(3):'',f.computedAt||''].join('|');
+}
+/** Merge key for log rows. Same feature + same instant + same author + same text = the
+    same statement. Content is part of the key on purpose: two entries written in the
+    same second by the same author are still two distinct statements. */
+function interpretationDedupKey(r){
+  return [r.linked_feature_id||'',r.timestamp||'',r.author||'',String(r.content||'').trim()].join('|');
 }
 
 function initFileDrop(){
@@ -7065,6 +7154,7 @@ let featChart=null;
 let featSample=null;          // selected sample object
 let featFit=null;             // last fit result object
 let featSavedFeatures=[];     // rows loaded from xrdFeatures store
+let featInterpretations=[];   // rows loaded from interpretations store (the whole log)
 let featManualBase=null;      // {y0,y1} manual baseline heights at window edges, or null=auto
 let featDrag=null;            // active baseline-endpoint drag state
 let featDragRaf=0;            // rAF throttle handle for live re-fit during drag
@@ -7469,6 +7559,9 @@ async function featSave(){
     baselinePoints:[{x:f.baseline.x0,y:f.baseline.y0},{x:f.baseline.x1,y:f.baseline.y1}],
     fit_xMin:f.winMin,fit_xMax:f.winMax,
     method:'auto',
+    /* Stable identity for this feature, independent of the autoIncrement id (which a DB
+       import reassigns). interpretation_log rows point here. */
+    featUid:newSampleUid(),
     computedAt:new Date().toISOString(),
     appVersion:FEAT_APP_VERSION
   };
@@ -7479,11 +7572,36 @@ async function featSave(){
   }catch(e){console.error(e);toast('Save failed: '+(e.message||e));}
 }
 async function deleteFeatureRow(id){
-  if(!confirm('Delete this feature?'))return;
-  try{await adapter.deleteFeature(id);await refreshFeatureDb();}catch(e){console.error(e);toast('Delete failed: '+(e.message||e));}
+  const rec=featSavedFeatures.find(r=>r.id===id);
+  const st=rec?featLogStats(rec.featUid):{total:0};
+  /* Say the log count out loud. An interpretation orphaned by a silent feature delete
+     is unreachable from the UI, which is the same as losing it without being told. */
+  const msg=st.total
+    ? `Delete this feature AND its ${st.total} interpretation log entr${st.total>1?'ies':'y'}?\n\nThe written record of what was said about this peak goes with it.`
+    : 'Delete this feature?';
+  if(!confirm(msg))return;
+  try{
+    await adapter.deleteFeature(id);
+    if(rec&&rec.featUid){
+      for(const e of featLogEntriesFor(rec.featUid))await adapter.deleteInterpretation(e.id);
+    }
+    if(featDetailId===id)closeFeatDetail();
+    await refreshFeatureDb();
+  }catch(e){console.error(e);toast('Delete failed: '+(e.message||e));}
 }
 async function refreshFeatureDb(){
   try{featSavedFeatures=await adapter.listFeatures();}catch(_e){featSavedFeatures=[];}
+  /* Backfill featUid on rows written before v19.1. Without it an interpretation has
+     nothing stable to point at. One-off: after the first pass every row has one. */
+  const needUid=featSavedFeatures.filter(r=>r&&!r.featUid);
+  if(needUid.length){
+    for(const r of needUid){
+      r.featUid=newSampleUid();
+      try{await adapter.saveFeature(r);}catch(e){console.error('featUid backfill failed',e);}
+    }
+    console.info(`[features] backfilled featUid on ${needUid.length} legacy row(s)`);
+  }
+  try{featInterpretations=await adapter.listInterpretations();}catch(_e){featInterpretations=[];}
   featSavedFeatures.sort((a,b)=>String(b.computedAt||'').localeCompare(String(a.computedAt||'')));
   featRenderSavedList();
 }
@@ -7513,14 +7631,29 @@ function featRenderQualChips(){
     return `<button type="button" class="qual-chip${on?' on':''}" onclick="featToggleQualFilter(${v})" title="${featQualTitle(v)}">${v===0?'Unrated':'★'+v}</button>`;
   }).join('');
 }
+/* Unverified-citation sweep: the mechanical way to find every number that came out of a
+   model and was never checked, instead of re-reading the whole log by hand. */
+let featCiteFilter=false;
+function featToggleCiteFilter(){featCiteFilter=!featCiteFilter;featRenderSavedList();}
+function featRenderCiteSummary(){
+  const el=document.getElementById('featCiteSummary');
+  const chip=document.getElementById('featCiteChip');
+  if(chip)chip.classList.toggle('on',featCiteFilter);
+  if(!el)return;
+  const n=featSavedFeatures.reduce((a,r)=>a+featLogStats(r.featUid).unverified,0);
+  el.innerHTML=n?`<span style="color:var(--warn)">⚠ ${n} unverified citation${n>1?'s':''}</span>`:'';
+}
 function featRenderSavedList(){
   const box=document.getElementById('featSavedList');if(!box)return;
   featRenderQualChips();
-  const list=featQualFilter.length
+  featRenderCiteSummary();
+  let list=featQualFilter.length
     ? featSavedFeatures.filter(r=>featQualFilter.includes(Number.isFinite(r.qualification)?r.qualification:0))
     : featSavedFeatures;
+  if(featCiteFilter)list=list.filter(r=>featLogStats(r.featUid).unverified>0);
+  const anyFilter=featQualFilter.length||featCiteFilter;
   const cnt=document.getElementById('featSavedCount');
-  if(cnt)cnt.textContent=featSavedFeatures.length?(featQualFilter.length?`${list.length}/${featSavedFeatures.length} items`:`${featSavedFeatures.length} items`):'';
+  if(cnt)cnt.textContent=featSavedFeatures.length?(anyFilter?`${list.length}/${featSavedFeatures.length} items`:`${featSavedFeatures.length} items`):'';
   if(!featSavedFeatures.length){box.innerHTML='<div class="empty" style="color:var(--text3);padding:8px">No features yet.</div>';return;}
   if(!list.length){box.innerHTML='<div class="empty" style="color:var(--text3);padding:8px">No features match the filter.</div>';return;}
   const th=(t)=>`<th style="text-align:left;padding:3px 6px;border-bottom:1px solid var(--border);white-space:nowrap">${t}</th>`;
@@ -7532,17 +7665,23 @@ function featRenderSavedList(){
     const D=Number.isFinite(+r.crystallite_nm)?(+r.crystallite_nm).toFixed(1):'—';
     const inten=Number.isFinite(+r.intensity_cps)?(+r.intensity_cps).toFixed(0):'—';
     const tc=Number.isFinite(+r.tempC)?(+r.tempC).toFixed(1):'—';
-    return `<tr>
+    const st=featLogStats(r.featUid);
+    const logCell=[
+      st.live?`<span title="${st.live} interpretation entr${st.live>1?'ies':'y'}${st.superseded?`, ${st.superseded} superseded`:''}">💬 ${st.live}</span>`:'<span style="color:var(--text3)">—</span>',
+      st.unverified?`<span style="color:var(--warn)" title="${st.unverified} entr${st.unverified>1?'ies quote':'y quotes'} a published number that has not been checked against the primary source">⚠${st.unverified}</span>`:''
+    ].filter(Boolean).join(' ');
+    return `<tr onclick="openFeatDetail(${JSON.stringify(r.id)})" style="cursor:pointer" title="Open the fit and its interpretation log">
       ${td(esc(r.sampleName||''))}
       ${td(r.peakType==='halo'?'Halo':'Peak')}
       ${td(t2)}${td(d)}${td(fw)}${td(inten)}${td(D)}${td(tc)}
       ${td(esc(r.hkl||''))}${td(esc(r.phase||''))}
+      ${td(logCell)}
       ${td(featQualStarsHtml(r.id,r.qualification))}
-      ${td(`<button type="button" class="btn warn" style="padding:1px 6px" onclick="deleteFeatureRow(${JSON.stringify(r.id)})">✕</button>`)}
+      ${td(`<button type="button" class="btn warn" style="padding:1px 6px" onclick="event.stopPropagation();deleteFeatureRow(${JSON.stringify(r.id)})">✕</button>`)}
     </tr>`;
   }).join('');
   box.innerHTML=`<table style="border-collapse:collapse;font-size:11px;min-width:820px">
-    <thead><tr>${th('Sample')}${th('Type')}${th('2θ °')}${th('d nm')}${th('FWHM °')}${th('Intensity')}${th('D nm')}${th('T °C')}${th('hkl')}${th('Phase')}${th('Quality')}${th('')}</tr></thead>
+    <thead><tr>${th('Sample')}${th('Type')}${th('2θ °')}${th('d nm')}${th('FWHM °')}${th('Intensity')}${th('D nm')}${th('T °C')}${th('hkl')}${th('Phase')}${th('Log')}${th('Quality')}${th('')}</tr></thead>
     <tbody>${rows}</tbody></table>`;
 }
 function exportFeaturesCsv(){
@@ -7555,6 +7694,457 @@ function exportFeaturesCsv(){
   const url=URL.createObjectURL(blob),a=document.createElement('a');
   a.href=url;a.download=`xrd_features_${stamp()}.csv`;a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function exportInterpretationsCsv(){
+  if(!featInterpretations.length){toast('No interpretations to export');return;}
+  const byUid=new Map(featSavedFeatures.filter(f=>f.featUid).map(f=>[f.featUid,f]));
+  const escCsv=v=>{if(v==null)return'';const s=String(v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const cols=['timestamp','author','sampleName','two_theta_deg','hkl','phase','confidence','citation_status','citation_source','citation_checked_at','superseded','content','linked_feature_id'];
+  const lines=[cols.join(',')];
+  const sorted=featInterpretations.slice().sort((a,b)=>String(a.timestamp||'').localeCompare(String(b.timestamp||'')));
+  for(const e of sorted){
+    const f=byUid.get(e.linked_feature_id)||{};
+    const cc=e.citation_check||null;
+    lines.push([
+      e.timestamp,e.author,f.sampleName,f.two_theta_deg,f.hkl,f.phase,e.confidence,
+      cc?cc.status:'',cc?cc.source:'',cc?cc.checkedAt:'',
+      e.superseded_by?'yes':'',e.content,e.linked_feature_id
+    ].map(escCsv).join(','));
+  }
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=`xrd_interpretations_${stamp()}.csv`;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+
+/* ============================================================
+   Feature detail — fit provenance + interpretation log
+   ------------------------------------------------------------
+   Two questions a peak table cannot answer months later:
+     1. which 2θ range was actually fitted, and what did the curve look like
+     2. who said what about it — me or the model — and was a quoted number
+        ever checked against the primary source
+   The chart REPLAYS the saved fitParams; it never re-fits. Re-fitting would show
+   what today's code computes, which is exactly not the record being audited.
+   ============================================================ */
+let featDetailId=null;         // id of the feature row currently on screen
+let featDetailChart=null;
+let featDetailSample=null;     // measured data behind it (audit copy, not in `samples`)
+let featDetailMode='single';   // 'single' | 'all'
+let featLogSupersedeId=null;   // entry that the next Add will supersede
+const featAuditDataCache=new Map();  // dbId -> parsed sample, cleared when the modal closes
+
+function featDetailRec(){return featSavedFeatures.find(x=>x.id===featDetailId)||null;}
+
+/** Rebuild the fitted model from a saved row. Returns null for rows too old or too
+    damaged to replay — the caller shows the numbers alone rather than a fake curve. */
+function featRecordFn(r){
+  const fp=(r&&r.fitParams)||{};
+  const amp=+fp.amp,mu=+fp.center,fwhm=+fp.fwhm,eta=+fp.eta;
+  if(![amp,mu,fwhm,eta].every(Number.isFinite))return null;
+  const bp=Array.isArray(r.baselinePoints)?r.baselinePoints:[];
+  const b0=bp[0],b1=bp[1];
+  if(!b0||!b1)return null;
+  const x0=+b0.x,y0=+b0.y,x1=+b1.x,y1=+b1.y;
+  if(![x0,y0,x1,y1].every(Number.isFinite))return null;
+  const dx=(x1-x0)||1e-9;
+  const bl=x=>y0+(y1-y0)*(x-x0)/dx;
+  const xmin=Number.isFinite(+r.fit_xMin)?+r.fit_xMin:x0;
+  const xmax=Number.isFinite(+r.fit_xMax)?+r.fit_xMax:x1;
+  return{amp,mu,fwhm,eta,bl,x0,y0,x1,y1,xmin,xmax,
+         at:x=>bl(x)+pseudoVoigt(x,amp,mu,Math.max(fwhm,1e-4),eta)};
+}
+function featRecordCurve(r,N){
+  const m=featRecordFn(r);if(!m)return null;
+  N=N||240;
+  const step=(m.xmax-m.xmin)/N,pts=[];
+  for(let i=0;i<=N;i++){const x=m.xmin+step*i;pts.push({x,y:m.at(x)});}
+  return{model:m,pts,base:[{x:m.x0,y:m.y0},{x:m.x1,y:m.y1}]};
+}
+/** Every feature fitted on the same measurement, in 2θ order. Keyed on fileDbId
+    (one cached file = one measurement); rows with no fileDbId fall back to sampleUid. */
+function featSiblingRecords(r){
+  if(!r)return[];
+  const same=r.fileDbId!=null
+    ? featSavedFeatures.filter(x=>x.fileDbId===r.fileDbId)
+    : featSavedFeatures.filter(x=>x.sampleUid&&x.sampleUid===r.sampleUid);
+  return same.slice().sort((a,b)=>(+a.two_theta_deg||0)-(+b.two_theta_deg||0));
+}
+
+/** Parse a cached file into a standalone sample. Deliberately does NOT touch the global
+    `samples` array — opening an audit view must not change what is loaded or plotted
+    (ensureDbFileLoaded flags rows fromBasket, which the basket pruner later acts on). */
+async function featLoadDataForAudit(dbId){
+  if(featAuditDataCache.has(dbId))return featAuditDataCache.get(dbId);
+  let p=null;
+  try{
+    const rec=await adapter.getFile(dbId);
+    if(rec){
+      const raw=rec.rawText;
+      if(typeof raw==='string'&&raw.startsWith('__PROJECT_SAMPLE_JSON__')){
+        p=JSON.parse(b64DecodeUtf8(raw.slice('__PROJECT_SAMPLE_JSON__'.length)));
+      }else if(typeof raw==='string'&&raw.startsWith('__HDF5_BASE64__')){
+        const bin=atob(raw.slice('__HDF5_BASE64__'.length));
+        const buf=new ArrayBuffer(bin.length),view=new Uint8Array(buf);
+        for(let i=0;i<bin.length;i++)view[i]=bin.charCodeAt(i);
+        p=await parseHDF5(buf,rec.name);
+      }else{
+        p=await Promise.resolve(parseAny({name:rec.name},raw));
+      }
+      if(p)p.__dbRec=rec;
+    }
+  }catch(e){console.error('audit data load failed',e);p=null;}
+  featAuditDataCache.set(dbId,p);
+  return p;
+}
+
+async function openFeatDetail(id){
+  const r=featSavedFeatures.find(x=>x.id===id);
+  if(!r){toast('Feature not found');return;}
+  featDetailId=id;featLogSupersedeId=null;featDetailMode='single';featDetailSample=null;
+  document.getElementById('featDetailModal').classList.add('show');
+  const m=document.querySelector('input[name="featDetailMode"][value="single"]');if(m)m.checked=true;
+  featLogCancelSupersede();
+  featDetailRenderHeader();
+  featRenderLog();
+  featDetailRedraw();
+  await featDetailLoadData(r);
+  if(featDetailId===id)featDetailRedraw();   // ignore a load that finished after the user moved on
+}
+function closeFeatDetail(){
+  document.getElementById('featDetailModal').classList.remove('show');
+  if(featDetailChart){featDetailChart.destroy();featDetailChart=null;}
+  featDetailId=null;featDetailSample=null;featLogSupersedeId=null;
+  featAuditDataCache.clear();
+}
+function featDetailSetMode(m){featDetailMode=m;featDetailRedraw();}
+
+async function featDetailLoadData(r){
+  let s=null;
+  if(r.fileDbId!=null)s=await featLoadDataForAudit(r.fileDbId);
+  if(!s&&r.sampleUid)s=samples.find(x=>x.sampleUid===r.sampleUid)||null;
+  featDetailSample=s;
+  const warn=document.getElementById('featDetailWarn');if(!warn)return;
+  const msgs=[];
+  if(!s){
+    msgs.push('The measured data behind this feature is no longer in the DB cache. The fit curve is replayed on its own, without the pattern it was fitted to.');
+  }else{
+    const cur=(s.__dbRec&&s.__dbRec.processingKey)||'';
+    if(r.processingKey&&cur&&cur!==r.processingKey)
+      msgs.push(`This fit was made on integration "${r.processingKey}", but the file now in the cache is "${cur}". The curve is being replayed over DIFFERENT data than it was fitted to — treat the overlay as indicative only.`);
+  }
+  if(msgs.length){warn.style.display='';warn.innerHTML=msgs.map(esc).join('<br>');}
+  else warn.style.display='none';
+}
+
+/* Fit windows drawn as background bands. A plugin rather than filled datasets so the
+   bands sit behind the data and never enter the legend or the y-scale calculation. */
+const featBandPlugin={
+  id:'featBands',
+  beforeDatasetsDraw(chart){
+    const bands=chart.$featBands||[];
+    if(!bands.length||!chart.chartArea)return;
+    const ctx=chart.ctx,ca=chart.chartArea,xs=chart.scales.x;
+    ctx.save();
+    bands.forEach(b=>{
+      const p0=xs.getPixelForValue(b.min),p1=xs.getPixelForValue(b.max);
+      const l=Math.max(ca.left,Math.min(p0,p1)),rr=Math.min(ca.right,Math.max(p0,p1));
+      if(rr<=l)return;
+      ctx.fillStyle=b.color+(b.focus?'30':'12');
+      ctx.fillRect(l,ca.top,rr-l,ca.bottom-ca.top);
+      ctx.strokeStyle=b.color+(b.focus?'cc':'66');
+      ctx.lineWidth=1;ctx.setLineDash(b.focus?[]:[3,3]);
+      ctx.beginPath();
+      ctx.moveTo(l,ca.top);ctx.lineTo(l,ca.bottom);
+      ctx.moveTo(rr,ca.top);ctx.lineTo(rr,ca.bottom);
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+};
+
+function featDetailRedraw(){
+  const canvas=document.getElementById('featDetailCanvas');
+  if(!canvas||typeof Chart==='undefined')return;
+  const r=featDetailRec();if(!r)return;
+  const recs=featDetailMode==='all'?featSiblingRecords(r):[r];
+  const datasets=[],bands=[];
+
+  // x span: the union of the shown fit windows, generously padded so the discarded
+  // shoulders on either side are visible — that is the point of the view.
+  let lo=Infinity,hi=-Infinity;
+  recs.forEach(rec=>{const m=featRecordFn(rec);if(m){lo=Math.min(lo,m.xmin);hi=Math.max(hi,m.xmax);}});
+  let xmin,xmax;
+  if(Number.isFinite(lo)){const pad=Math.max((hi-lo)*0.6,0.4);xmin=lo-pad;xmax=hi+pad;}
+
+  const s=featDetailSample;
+  if(s&&s.tth&&s.tth.length){
+    const t=s.tth,y=s.intensity||[],pts=[];
+    for(let i=0;i<t.length;i++){
+      if(xmin!=null&&(t[i]<xmin||t[i]>xmax))continue;
+      pts.push({x:t[i],y:y[i]});
+    }
+    datasets.push({label:'measured',data:pts,borderColor:'#94a3b8',borderWidth:1.2,pointRadius:0,tension:0,parsing:false,order:9});
+  }
+  recs.forEach((rec,i)=>{
+    const col=COLORS[i%COLORS.length];
+    const c=featRecordCurve(rec,240);
+    if(!c)return;
+    const focus=rec.id===featDetailId;
+    datasets.push({label:'fit',data:c.pts,borderColor:col,borderWidth:focus?2.4:1.5,pointRadius:0,tension:0,parsing:false,order:1});
+    datasets.push({label:'baseline',data:c.base,borderColor:col,borderWidth:1,borderDash:[5,4],pointRadius:0,tension:0,parsing:false,order:2});
+    const apex=c.model.bl(c.model.mu)+c.model.amp;
+    datasets.push({label:'apex',data:[{x:c.model.mu,y:apex}],borderColor:col,backgroundColor:col,pointRadius:focus?4:2.5,showLine:false,parsing:false,order:0});
+    bands.push({min:c.model.xmin,max:c.model.xmax,color:col,focus});
+  });
+
+  let ymin=Infinity,ymax=-Infinity;
+  datasets.forEach(d=>d.data.forEach(p=>{if(Number.isFinite(p.y)){if(p.y<ymin)ymin=p.y;if(p.y>ymax)ymax=p.y;}}));
+  if(Number.isFinite(ymin)&&Number.isFinite(ymax)){const pad=(ymax-ymin)*0.08||1;ymin-=pad;ymax+=pad;}
+  else{ymin=undefined;ymax=undefined;}
+
+  const gridC=getComputedStyle(document.body).getPropertyValue('--border')||'#ddd';
+  if(featDetailChart){featDetailChart.destroy();featDetailChart=null;}
+  featDetailChart=new Chart(canvas,{
+    type:'line',
+    data:{datasets},
+    options:{
+      animation:false,parsing:false,responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{enabled:false}},
+      scales:{
+        x:{type:'linear',min:xmin,max:xmax,title:{display:true,text:'2θ (deg)'},grid:{color:gridC}},
+        y:{min:ymin,max:ymax,title:{display:true,text:'Intensity (cps)'},grid:{color:gridC}}
+      }
+    },
+    plugins:[featBandPlugin]
+  });
+  featDetailChart.$featBands=bands;
+  featDetailChart.update('none');
+  featDetailRenderLegend(recs);
+  featDetailRenderNums(r);
+  featDetailRenderHeader();
+}
+
+function featDetailRenderHeader(){
+  const el=document.getElementById('featDetailTitle');if(!el)return;
+  const r=featDetailRec();
+  if(!r){el.textContent='';return;}
+  const t2=Number.isFinite(+r.two_theta_deg)?(+r.two_theta_deg).toFixed(3):'—';
+  const bits=[r.sampleName||r.fileName||'(unnamed)',`${r.peakType==='halo'?'Halo':'Peak'} @ 2θ ${t2}°`];
+  if(r.hkl)bits.push(`hkl ${r.hkl}`);
+  if(r.phase)bits.push(r.phase);
+  if(r.computedAt)bits.push(`fitted ${new Date(r.computedAt).toLocaleString()}`);
+  el.textContent=bits.join('  ·  ');
+}
+function featDetailRenderLegend(recs){
+  const el=document.getElementById('featDetailLegend');if(!el)return;
+  if(featDetailMode!=='all'){el.innerHTML='';return;}
+  const rows=recs.map((rec,i)=>{
+    const col=COLORS[i%COLORS.length];
+    const focus=rec.id===featDetailId;
+    const m=featRecordFn(rec);
+    const t2=Number.isFinite(+rec.two_theta_deg)?(+rec.two_theta_deg).toFixed(3):'—';
+    const win=m?`${m.xmin.toFixed(2)}–${m.xmax.toFixed(2)}`:'—';
+    const r2=rec.fitParams&&Number.isFinite(+rec.fitParams.r2)?(+rec.fitParams.r2).toFixed(4):'—';
+    const log=featLogEntriesFor(rec.featUid);
+    const live=log.filter(e=>!e.superseded_by);
+    const unver=live.filter(e=>e.citation_check&&e.citation_check.status==='unverified').length;
+    const tags=[rec.hkl?esc(rec.hkl):'',rec.phase?esc(rec.phase):''].filter(Boolean).join(' / ');
+    return `<div onclick="featDetailFocus(${JSON.stringify(rec.id)})" title="Show this fit"
+      style="display:flex;align-items:center;gap:8px;padding:2px 5px;border-radius:4px;cursor:pointer;${focus?'background:var(--bg2);font-weight:600':''}">
+      <span style="width:11px;height:11px;border-radius:2px;background:${col};flex:none"></span>
+      <span style="min-width:70px">2θ ${t2}°</span>
+      <span style="color:var(--text3);min-width:110px">win ${win}</span>
+      <span style="color:var(--text3);min-width:74px">R² ${r2}</span>
+      <span style="color:var(--text3);min-width:90px">${tags||'&nbsp;'}</span>
+      <span style="color:var(--text3)">${live.length?`💬 ${live.length}`:''}</span>
+      ${unver?`<span style="color:var(--warn)">⚠ ${unver} unverified</span>`:''}
+    </div>`;
+  }).join('');
+  el.innerHTML=`<div style="color:var(--text3);margin-bottom:2px">${recs.length} fit(s) on this measurement — click one to make it the subject of the log below</div>${rows}`;
+}
+function featDetailFocus(id){
+  if(!featSavedFeatures.some(x=>x.id===id))return;
+  featDetailId=id;featLogCancelSupersede();
+  featDetailRedraw();featRenderLog();
+}
+function featDetailRenderNums(r){
+  const el=document.getElementById('featDetailNums');if(!el)return;
+  const fp=r.fitParams||{};
+  const cell=(l,v,u)=>`<span><b style="color:var(--text3);font-weight:600">${l}</b> <span style="color:var(--text)">${v}</span>${u?`<span style="color:var(--text3)"> ${u}</span>`:''}</span>`;
+  const n=(v,d)=>Number.isFinite(+v)?(+v).toFixed(d):'—';
+  const parts=[
+    cell('2θ',n(r.two_theta_deg,3),'°'),
+    cell('d',n(r.d_nm,4),'nm'),
+    cell('FWHM',n(r.fwhm_deg,4),'°'),
+    cell('Intensity',n(r.intensity_cps,1),'cps'),
+    cell('Integ.',n(r.area_cps_deg,1),'cps·°'),
+    cell('η',n(fp.eta,3),''),
+    cell('R²',n(fp.r2,4),''),
+    cell('Fit window',`${n(r.fit_xMin,3)} – ${n(r.fit_xMax,3)}`,'°')
+  ];
+  if(r.peakType!=='halo'){
+    parts.push(cell('Corr. FWHM',n(r.fwhm_corrected_deg,4),'°'));
+    parts.push(cell('Crystallite D',n(r.crystallite_nm,1),'nm'));
+    parts.push(cell('K',n(r.K,2),''));
+  }
+  parts.push(cell('λ',n(r.lambda_A,5),'Å'));
+  parts.push(cell('Method',esc(r.method||'—')+(r.batchLabel?` (${esc(r.batchLabel)})`:''),''));
+  el.innerHTML=parts.join('');
+}
+
+/* ---- interpretation log ---- */
+function featLogEntriesFor(featUid){
+  if(!featUid)return[];
+  return featInterpretations
+    .filter(e=>e&&e.linked_feature_id===featUid)
+    .sort((a,b)=>String(a.timestamp||'').localeCompare(String(b.timestamp||'')));
+}
+function featLogStats(featUid){
+  const all=featLogEntriesFor(featUid);
+  const live=all.filter(e=>!e.superseded_by);
+  return{
+    total:all.length,live:live.length,superseded:all.length-live.length,
+    unverified:live.filter(e=>e.citation_check&&e.citation_check.status==='unverified').length
+  };
+}
+function featLogToggleCite(){
+  const on=!!document.getElementById('featLogCite')?.checked;
+  const src=document.getElementById('featLogCiteSrc');
+  if(src)src.style.display=on?'':'none';
+}
+const FEAT_AUTHOR_STYLE={
+  keisuke:{bg:'#2563eb',label:'keisuke'},
+  claude :{bg:'#b45309',label:'claude'}
+};
+function featRenderLog(){
+  const box=document.getElementById('featLogList');if(!box)return;
+  const r=featDetailRec();
+  const uid=r&&r.featUid;
+  const all=featLogEntriesFor(uid);
+  const showSup=!!document.getElementById('featLogShowSuperseded')?.checked;
+  const list=showSup?all:all.filter(e=>!e.superseded_by);
+  const st=featLogStats(uid);
+  const cnt=document.getElementById('featLogCount');
+  if(cnt){
+    cnt.innerHTML=st.total
+      ? `${st.live} current${st.superseded?` · ${st.superseded} superseded`:''}`
+        +(st.unverified?` · <span style="color:var(--warn)">⚠ ${st.unverified} unverified citation${st.unverified>1?'s':''}</span>`:'')
+      : 'no entries yet';
+  }
+  if(!list.length){
+    box.innerHTML=`<div style="font-size:11px;color:var(--text3);padding:7px 2px">${st.total?'All entries here are superseded — tick “show superseded” to read them.':'Nothing written about this peak yet. What made you fit it, and what do you think it is?'}</div>`;
+    return;
+  }
+  box.innerHTML=list.map(e=>{
+    const sty=FEAT_AUTHOR_STYLE[e.author]||{bg:'#6b7280',label:e.author||'?'};
+    const dead=!!e.superseded_by;
+    const when=e.timestamp?new Date(e.timestamp).toLocaleString():'—';
+    const cc=e.citation_check||null;
+    const chips=[];
+    if(e.confidence)chips.push(`<span style="font-size:9px;padding:1px 5px;border-radius:8px;border:1px solid var(--border);color:var(--text3)">confidence: ${esc(e.confidence)}</span>`);
+    if(cc){
+      const ok=cc.status==='verified';
+      chips.push(`<span title="${ok?esc('Checked against the primary source '+(cc.checkedAt?'on '+new Date(cc.checkedAt).toLocaleString():'')):'Quotes a published number that has NOT been checked against the primary source'}"
+        style="font-size:9px;padding:1px 5px;border-radius:8px;border:1px solid ${ok?'var(--ok)':'var(--warn)'};color:${ok?'var(--ok)':'var(--warn)'}">${ok?'✓ citation verified':'⚠ citation unverified'}${cc.source?': '+esc(cc.source):''}</span>`);
+    }
+    const acts=[];
+    if(!dead){
+      acts.push(`<button type="button" class="btn" style="padding:0 6px;font-size:10px" onclick="featLogStartSupersede(${JSON.stringify(e.id)})" title="Write a new entry that replaces this one. The old text is kept, marked superseded.">Correct</button>`);
+      if(cc&&cc.status==='unverified')acts.push(`<button type="button" class="btn green" style="padding:0 6px;font-size:10px" onclick="featLogVerify(${JSON.stringify(e.id)})" title="Record that you have now read the primary source">Mark verified</button>`);
+    }
+    acts.push(`<button type="button" class="btn warn" style="padding:0 6px;font-size:10px" onclick="featLogDelete(${JSON.stringify(e.id)})">✕</button>`);
+    return `<div style="border:1px solid var(--border);border-left:3px solid ${sty.bg};border-radius:5px;padding:6px 8px;margin-bottom:5px;${dead?'opacity:.55':''}">
+      <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:3px">
+        <span style="font-size:9px;font-weight:700;color:#fff;background:${sty.bg};padding:1px 6px;border-radius:8px">${esc(sty.label)}</span>
+        <span style="font-size:10px;color:var(--text3)">${esc(when)}</span>
+        ${chips.join('')}
+        ${dead?'<span style="font-size:9px;padding:1px 5px;border-radius:8px;background:var(--border);color:var(--text3)">superseded</span>':''}
+        <span style="margin-left:auto;display:flex;gap:4px">${acts.join('')}</span>
+      </div>
+      <div style="font-size:11px;line-height:1.6;white-space:pre-wrap;color:var(--text)${dead?';text-decoration:line-through var(--text3)':''}">${esc(e.content||'')}</div>
+    </div>`;
+  }).join('');
+}
+function featLogStartSupersede(id){
+  const e=featInterpretations.find(x=>x.id===id);if(!e)return;
+  featLogSupersedeId=id;
+  const note=document.getElementById('featLogSupersedeNote');
+  if(note){note.style.display='';note.textContent='The next entry will supersede the '+(e.author||'?')+' entry from '+(e.timestamp?new Date(e.timestamp).toLocaleString():'—');}
+  const btn=document.getElementById('featLogCancelBtn');if(btn)btn.style.display='';
+  const ta=document.getElementById('featLogContent');if(ta)ta.focus();
+}
+function featLogCancelSupersede(){
+  featLogSupersedeId=null;
+  const note=document.getElementById('featLogSupersedeNote');if(note)note.style.display='none';
+  const btn=document.getElementById('featLogCancelBtn');if(btn)btn.style.display='none';
+}
+async function featLogAdd(){
+  const r=featDetailRec();
+  if(!r){toast('No feature open');return;}
+  if(!r.featUid){toast('This feature has no stable id yet — close and reopen the Feature DB tab');return;}
+  const ta=document.getElementById('featLogContent');
+  const content=(ta?.value||'').trim();
+  if(!content){toast('Write the interpretation first');return;}
+  const cites=!!document.getElementById('featLogCite')?.checked;
+  const src=(document.getElementById('featLogCiteSrc')?.value||'').trim();
+  const rec={
+    linked_feature_id:r.featUid,
+    timestamp:new Date().toISOString(),
+    author:document.getElementById('featLogAuthor')?.value||'keisuke',
+    content,
+    confidence:document.getElementById('featLogConf')?.value||null,
+    /* Anything quoting a published number starts life UNVERIFIED. Flipping it takes a
+       deliberate act, so "not yet checked" can never be mistaken for "checked". */
+    citation_check:cites?{status:'unverified',source:src,checkedAt:null}:null,
+    superseded_by:null,
+    appVersion:FEAT_APP_VERSION
+  };
+  try{
+    const newId=await adapter.saveInterpretation(rec);
+    if(featLogSupersedeId!=null){
+      const old=featInterpretations.find(e=>e.id===featLogSupersedeId);
+      if(old){old.superseded_by=newId;await adapter.saveInterpretation(old);}
+    }
+    featInterpretations=await adapter.listInterpretations();
+    if(ta)ta.value='';
+    const cb=document.getElementById('featLogCite');if(cb)cb.checked=false;
+    const cs=document.getElementById('featLogCiteSrc');if(cs)cs.value='';
+    featLogToggleCite();featLogCancelSupersede();
+    featRenderLog();featRenderSavedList();
+    if(featDetailMode==='all')featDetailRenderLegend(featSiblingRecords(r));
+    toast('Interpretation logged');
+  }catch(e){console.error(e);toast('Log save failed: '+(e.message||e));}
+}
+async function featLogVerify(id){
+  const e=featInterpretations.find(x=>x.id===id);
+  if(!e||!e.citation_check)return;
+  const src=prompt('Primary source you checked (DOI / reference):',e.citation_check.source||'');
+  if(src===null)return;
+  e.citation_check={status:'verified',source:src.trim(),checkedAt:new Date().toISOString()};
+  try{
+    await adapter.saveInterpretation(e);
+    featInterpretations=await adapter.listInterpretations();
+    featRenderLog();featRenderSavedList();
+    const r=featDetailRec();
+    if(r&&featDetailMode==='all')featDetailRenderLegend(featSiblingRecords(r));
+  }catch(err){console.error(err);toast('Save failed: '+(err.message||err));}
+}
+async function featLogDelete(id){
+  if(!confirm('Delete this log entry? The written record of what was said goes with it.'))return;
+  try{
+    await adapter.deleteInterpretation(id);
+    // Anything that pointed here is no longer superseded by anything.
+    for(const e of featInterpretations.filter(x=>x.superseded_by===id)){
+      e.superseded_by=null;
+      await adapter.saveInterpretation(e);
+    }
+    featInterpretations=await adapter.listInterpretations();
+    if(featLogSupersedeId===id)featLogCancelSupersede();
+    featRenderLog();featRenderSavedList();
+    const r=featDetailRec();
+    if(r&&featDetailMode==='all')featDetailRenderLegend(featSiblingRecords(r));
+  }catch(e){console.error(e);toast('Delete failed: '+(e.message||e));}
 }
 
 /* ============================================================
@@ -7817,6 +8407,7 @@ async function batchPeakRunAll(save){
         baselinePoints:[{x:fit.baseline.x0,y:fit.baseline.y0},{x:fit.baseline.x1,y:fit.baseline.y1}],
         fit_xMin:fit.winMin,fit_xMax:fit.winMax,
         method:'batch',batchLabel:label,
+        featUid:newSampleUid(),
         computedAt:new Date().toISOString(),
         appVersion:FEAT_APP_VERSION
       };
