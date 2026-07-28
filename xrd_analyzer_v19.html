@@ -122,7 +122,7 @@ body.theme-dark .app-notice{background:#352a12;border-color:#8a7020;color:#f2e6c
 .db-folder-head:hover{background:var(--bg3)}
 .db-folder-label{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .db-folder-count{margin-left:auto;color:var(--text3)}
-.db-item{padding:.45rem .65rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px}
+.db-item{padding:.45rem .65rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;content-visibility:auto;contain-intrinsic-size:auto 44px}
 .db-item:hover{background:var(--bg3)}
 .db-item-tri{flex-shrink:0;width:12px;text-align:center;color:var(--text3);cursor:pointer;font-size:9px}
 .db-item-tri:hover{color:var(--text)}
@@ -234,7 +234,7 @@ body.theme-dark .app-notice{background:#352a12;border-color:#8a7020;color:#f2e6c
 .basket-chk-on{background:color-mix(in srgb,var(--accent) 9%, transparent)}
 .db-cache-chk{flex-shrink:0;margin:0 2px 0 0;cursor:pointer}
 .fb-list{max-height:min(200px,26vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:3px;font-size:11px}
-.fb-row{display:flex;align-items:center;gap:5px;padding:3px 4px;border-radius:4px}
+.fb-row{display:flex;align-items:center;gap:5px;padding:3px 4px;border-radius:4px;content-visibility:auto;contain-intrinsic-size:auto 26px}
 .fb-row:hover{background:var(--bg3)}
 .fb-row.fb-excluded{opacity:.5}
 .fb-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -354,7 +354,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <button class="btn" id="dbBulkEditBtn" onclick="openDbBulkEditModal()" disabled title="Edit metadata for every file in the basket">Bulk edit basket</button>
             <button class="btn" id="dbBulkClearBtn" onclick="clearFirstBasket()" disabled>Clear basket</button>
             <button class="btn" id="dbBulkCsvBtn" onclick="exportBasketIntensityCsv()" disabled title="Export the basket's intensities to a wide CSV: col 1 = shared x axis (ALBA q, or 2θ), col 2+ = each file's intensity. All files must be the same detector type (SAXS or WAXS), same row count, same x grid.">Export CSV</button>
-            <button class="btn" onclick="autoTagAlbaScans({toast:true})" title="Tag ALBA frames by scan name: iso_1, ramp_up_2, … (both detectors share the tag)">Auto-tag: scan name</button>
+            <button class="btn" onclick="autoTagAlbaScans({toast:true,checkedOnly:true})" title="Tag the CHECKED (basket) ALBA frames by scan name: iso_1, ramp_up_2, … (both detectors share the tag). Tick the records first; numbering is computed within the checked set.">Auto-tag checked: scan name</button>
             <button class="btn" onclick="backfillFolderPaths()" title="Fill folder/path from each file's header (# --> …) so old records become filterable by path">Fill paths</button>
           </div>
         </div>
@@ -517,6 +517,21 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <input type="range" id="basketThinRange" min="1" max="1" value="1" step="1" style="flex:1;min-width:70px" oninput="previewBasketThin(this.value)" onchange="applyBasketThin(this.value)">
               <input type="number" class="num" id="basketThinCount" min="1" step="1" style="width:52px" onchange="applyBasketThin(this.value)">
               <span id="basketThinHint" style="font-size:10px;color:var(--text3);white-space:nowrap"></span>
+            </div>
+            <div class="basket-controls" title="Plot the files in batches: pick how many to show at once, optionally skip files between them, then use the arrows to step to the next batch. First/last of the shown list are not forced — the batch is exactly the files in the window.">
+              <span style="font-size:10px;color:var(--text3)">page</span>
+              <select class="txt-sm" id="basketPageSize" style="width:62px" onchange="setBasketPageSize(this.value)" title="How many files to plot per batch">
+                <option value="0">All</option>
+                <option value="10">10</option>
+                <option value="30">30</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span style="font-size:10px;color:var(--text3)">skip</span>
+              <input type="number" class="num" id="basketPageSkip" min="0" step="1" value="0" style="width:46px" title="Files to skip between each shown file (0 = consecutive, 1 = every 2nd file, 2 = every 3rd …)" onchange="setBasketPageSkip(this.value)">
+              <button type="button" class="btn" id="basketPagePrev" onclick="basketPageNav(-1)" style="padding:2px 8px" title="Previous batch">◀</button>
+              <button type="button" class="btn" id="basketPageNext" onclick="basketPageNav(1)" style="padding:2px 8px" title="Next batch">▶</button>
+              <span id="basketPageHint" style="font-size:10px;color:var(--text3);white-space:nowrap"></span>
             </div>
             <div id="combineSamplePicker" style="max-height:min(200px,26vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:4px 6px;margin-bottom:6px;font-size:11px"></div>
             <div class="title" style="margin-bottom:4px">Trace settings</div>
@@ -1027,6 +1042,9 @@ let dbBulkShownIds=[];
 let uiTheme='light';
 let basketSearch='';
 let basketSelectedOnly=false;
+let basketPageSize=0;    // files plotted per batch; 0 = All (paging off), else 10/30/50/100
+let basketPageStart=0;   // index of the first file of the current batch within the shown list
+let basketPageSkip=0;    // files skipped between each shown file (step = skip+1)
 let thermalMultiSeries=false;
 let dbPanelLayout='sidebar'; // sidebar | top
 let thermalViewMode='per';
@@ -1123,6 +1141,96 @@ class IndexedDBAdapter{
      stamping a new field onto every legacy row does not reset the whole cache's dates
      (the DB tree groups by savedAt). */
   saveFileKeepDate(o){return this.tx('files','readwrite',st=>st.put({...o,savedAt:o&&o.savedAt?o.savedAt:new Date().toISOString()}));}
+  /** Write many file records in ONE transaction. Bulk edit of 1000+ rows used to open
+      one transaction per file (2000+ round-trips) and froze the UI; this commits the
+      whole batch at once. Stamps savedAt like saveFile(). Resolves on commit. */
+  saveFilesBulk(list){
+    const arr=Array.isArray(list)?list:[];
+    if(!arr.length)return Promise.resolve(0);
+    return this.open().then(db=>new Promise((res,rej)=>{
+      let tx;
+      try{tx=db.transaction('files','readwrite');}catch(err){rej(err);return;}
+      const st=tx.objectStore('files');
+      const now=new Date().toISOString();
+      tx.oncomplete=()=>res(arr.length);
+      tx.onerror=()=>rej(tx.error);
+      tx.onabort=()=>rej(tx.error||new DOMException('bulk save aborted','AbortError'));
+      try{for(const o of arr)st.put({...o,savedAt:now});}
+      catch(err){try{tx.abort();}catch(_e){}rej(err);}
+    }));
+  }
+  /** Delete many file records in ONE transaction (companion to saveFilesBulk). */
+  deleteFilesBulk(ids){
+    const arr=(Array.isArray(ids)?ids:[]).filter(id=>id!=null);
+    if(!arr.length)return Promise.resolve(0);
+    return this.open().then(db=>new Promise((res,rej)=>{
+      let tx;
+      try{tx=db.transaction('files','readwrite');}catch(err){rej(err);return;}
+      const st=tx.objectStore('files');
+      tx.oncomplete=()=>res(arr.length);
+      tx.onerror=()=>rej(tx.error);
+      tx.onabort=()=>rej(tx.error||new DOMException('bulk delete aborted','AbortError'));
+      try{for(const id of arr)st.delete(id);}
+      catch(err){try{tx.abort();}catch(_e){}rej(err);}
+    }));
+  }
+  /** List every file record WITHOUT its heavy `rawText` payload. The in-memory
+      dbFiles list only ever needs metadata (name, temp, tags, dates, …); keeping the
+      full file contents in RAM is what made the app grow heavy as the cache filled.
+      The actual data is read on demand via getFile(id) when a file is plotted/exported.
+      `_hasRaw` records whether content exists, without materialising it. */
+  listFileMeta(){
+    return this.open().then(db=>new Promise((res,rej)=>{
+      const out=[];
+      const tx=db.transaction('files','readonly');
+      const rq=tx.objectStore('files').openCursor();
+      rq.onsuccess=e=>{
+        const c=e.target.result;
+        if(!c)return;
+        const v=c.value;
+        if(v&&typeof v==='object'){
+          const {rawText,...meta}=v;
+          meta.id=(v.id!=null&&v.id!=='')?v.id:c.primaryKey;
+          meta._hasRaw=rawText!=null;
+          out.push(meta);
+        }
+        c.continue();
+      };
+      rq.onerror=()=>rej(rq.error);
+      tx.onerror=()=>rej(tx.error);
+      tx.oncomplete=()=>res(out);
+    }));
+  }
+  /** Merge metadata into existing records in ONE transaction WITHOUT touching rawText.
+      Each update is {id, patch}: the stored record is read, the patch fields are merged
+      on top, and it is written back — so the heavy content is preserved even though the
+      in-memory copy (from listFileMeta) never held it. Stamps savedAt like saveFile().
+      Records that no longer exist are skipped. Resolves with the count actually written. */
+  patchFilesBulk(updates){
+    const arr=(Array.isArray(updates)?updates:[]).filter(u=>u&&u.id!=null&&u.patch);
+    if(!arr.length)return Promise.resolve(0);
+    return this.open().then(db=>new Promise((res,rej)=>{
+      let tx;
+      try{tx=db.transaction('files','readwrite');}catch(err){rej(err);return;}
+      const st=tx.objectStore('files');
+      const now=new Date().toISOString();
+      let done=0;
+      tx.oncomplete=()=>res(done);
+      tx.onerror=()=>rej(tx.error);
+      tx.onabort=()=>rej(tx.error||new DOMException('bulk patch aborted','AbortError'));
+      try{
+        for(const u of arr){
+          const g=st.get(u.id);
+          g.onsuccess=()=>{
+            const cur=g.result;
+            if(!cur)return;                 // record gone — skip, don't recreate it
+            st.put({...cur,...u.patch,id:u.id,savedAt:now});
+            done++;
+          };
+        }
+      }catch(err){try{tx.abort();}catch(_e){}rej(err);}
+    }));
+  }
   deleteFile(id){return this.tx('files','readwrite',st=>st.delete(id));}
   clearFiles(){return this.tx('files','readwrite',st=>st.clear());}
   listProjects(){return this.listAllWithKeys('projects');}
@@ -2201,9 +2309,9 @@ function parseAlbaDat(text,lines,fname){
   let detector=(j&&j.detector)?String(j.detector):null;
   if(!detector){
     const hdr=lines.filter(l=>/^\s*#/.test(l)).join('\n');
-    const base=albaBaseName(fname);
-    if(/rayonix/i.test(hdr)||/^rayonix/i.test(base))detector='Rayonix';
-    else if(/pilatus/i.test(hdr)||/^pilatus/i.test(base))detector='Pilatus';
+    const det0=albaDetector(fname);
+    if(/rayonix/i.test(hdr)||det0==='rayonix')detector='Rayonix';
+    else if(/pilatus/i.test(hdr)||det0==='pilatus')detector='Pilatus';
   }
   const q=[],inten=[];let sawSigma=false;
   for(const line of lines){
@@ -2317,7 +2425,7 @@ function parseAlbaExpEnv(text){
     for(const fi of fileIdxs){
       const v=(cells[fi]||'').trim();
       if(!v)continue;
-      const base=albaBaseName(v);
+      const base=albaFrameCore(v);
       if(base)map[base]={tempC,timeIso};
     }
   }
@@ -2341,7 +2449,7 @@ async function applyAlbaExpEnv(newMap){
   const recs=await adapter.listFiles().catch(()=>dbFiles);
   for(const rec of (recs||[])){
     if(!rec||rec.id==null)continue;
-    const e=albaExpEnvMap[albaBaseName(rec.name)];
+    const e=albaExpEnvMap[albaFrameCore(rec.name)];
     if(!e)continue;
     const patch={...rec,id:rec.id};let changed=false;
     if(Number.isFinite(e.tempC)&&rec.tempC!==e.tempC){patch.tempC=e.tempC;changed=true;}
@@ -2349,7 +2457,7 @@ async function applyAlbaExpEnv(newMap){
     if(changed){try{await adapter.saveFile(patch);n++;}catch(_e){}}
   }
   for(const s of samples){
-    const e=albaExpEnvMap[albaBaseName(s.rawName||s.name)];
+    const e=albaExpEnvMap[albaFrameCore(s.rawName||s.name)];
     if(!e)continue;
     if(Number.isFinite(e.tempC)){
       s.tempSetPoint=e.tempC;s.tempStart=e.tempC;s.tempEnd=e.tempC;
@@ -2358,7 +2466,7 @@ async function applyAlbaExpEnv(newMap){
     }
     if(e.timeIso&&!s.timeStart){const d=new Date(e.timeIso);if(!isNaN(d.getTime())){s.timeStart=d;s.thermalTimeStartOverride=d.toISOString();}}
   }
-  dbFiles=await adapter.listFiles().catch(()=>dbFiles);
+  dbFiles=await adapter.listFileMeta().catch(()=>dbFiles);
   renderDbFileList();renderFirstBasket();
   try{renderAll();}catch(_e){}
   return n;
@@ -2366,18 +2474,29 @@ async function applyAlbaExpEnv(newMap){
 
 /* ===== ALBA scan grouping + frame time (from .dat mtime) ===================== */
 
-/** True for an ALBA pyFAI frame filename ("pilatus_*"/"rayonix_*"). */
-function isAlbaFrameName(name){return /^(pilatus|rayonix)_/i.test(albaBaseName(name));}
+/** ALBA detector token. It sits at the START of a raw frame name
+    ("pilatus_iso_..._0000") but in the MIDDLE of a dataset-renamed file
+    ("2913_C10TAG_-77C_20260727_pilatus_iso_..._0000"), where a
+    <seq>_<sample>_<temp>_<date>_ prefix precedes it — so match it either way. */
+const ALBA_DET_RE=/(?:^|_)(pilatus|rayonix)_/i;
+/** The detector token anywhere in the frame name, lowercased, or '' if none. */
+function albaDetector(name){const m=albaBaseName(name).match(ALBA_DET_RE);return m?m[1].toLowerCase():'';}
+/** Frame core = detector token + everything after it, dropping any dataset-name prefix.
+    Identity for a raw frame name; strips "<seq>_<sample>_<temp>_<date>_" from a renamed one.
+    Falls back to the plain basename when there is no detector token. */
+function albaFrameCore(name){const b=albaBaseName(name);const m=b.match(/(?:^|_)((?:pilatus|rayonix)_.*)$/i);return m?m[1]:b;}
+/** True for an ALBA pyFAI frame filename, raw or dataset-renamed. */
+function isAlbaFrameName(name){return ALBA_DET_RE.test(albaBaseName(name));}
 
-/** Detector-stripped frame index key, e.g. "pilatus_iso_-51_000_0000" → "iso_-51_000_0000". */
-function albaFrameKey(name){return albaBaseName(name).replace(/^(pilatus|rayonix)_/i,'');}
+/** Detector-stripped frame index key, e.g. "…pilatus_iso_-51_000_0000" → "iso_-51_000_0000". */
+function albaFrameKey(name){return albaFrameCore(name).replace(/^(pilatus|rayonix)_/i,'');}
 
 /** Split an ALBA frame name into {scanType, groupKey}:
     "pilatus_iso_-51_000_0000"    → {scanType:'iso',      groupKey:'iso_-51_000'}
     "rayonix_ramp_up_30_000_0041" → {scanType:'ramp_up',  groupKey:'ramp_up_30_000'}
     scanType = the leading tokens up to the first signed-numeric token (target temp/run). */
 function albaScanParts(name){
-  const b=albaBaseName(name).replace(/^(pilatus|rayonix)_/i,'');
+  const b=albaFrameKey(name);
   const groupKey=b.replace(/_\d+$/,'');            // drop the trailing frame index
   const toks=groupKey.split('_');const tt=[];
   for(const t of toks){if(/^-?\d+(?:\.\d+)?$/.test(t))break;tt.push(t);}
@@ -2409,10 +2528,10 @@ function buildAlbaFrameTimeMap(files){
   /* Whole batch within 10 s ⇒ mtimes were reset by a non-preserving copy ⇒ unusable. */
   if(Math.max(...allT)-Math.min(...allT)<10000)return;
   const detMin={};
-  dat.forEach(f=>{const d=(f.name.match(/^(pilatus|rayonix)/i)||[,''])[1].toLowerCase();const t=+f.lastModified;if(!Number.isFinite(t))return;if(!(d in detMin)||t<detMin[d])detMin[d]=t;});
+  dat.forEach(f=>{const d=albaDetector(f.name);const t=+f.lastModified;if(!Number.isFinite(t))return;if(!(d in detMin)||t<detMin[d])detMin[d]=t;});
   const refDet=Object.keys(detMin).sort((a,b)=>detMin[a]-detMin[b])[0];
   const byKey={};
-  dat.forEach(f=>{const t=+f.lastModified;if(!Number.isFinite(t))return;const d=(f.name.match(/^(pilatus|rayonix)/i)||[,''])[1].toLowerCase();const key=albaFrameKey(f.name);(byKey[key]=byKey[key]||[]).push({d,t});});
+  dat.forEach(f=>{const t=+f.lastModified;if(!Number.isFinite(t))return;const d=albaDetector(f.name);const key=albaFrameKey(f.name);(byKey[key]=byKey[key]||[]).push({d,t});});
   Object.keys(byKey).forEach(key=>{const arr=byKey[key];const ref=arr.find(x=>x.d===refDet);albaFrameTimeMap[key]=ref?ref.t:Math.min(...arr.map(x=>x.t));});
 }
 
@@ -2432,11 +2551,22 @@ function albaScanTagMap(names){
   return {keyTag,types:Object.keys(byType)};
 }
 async function autoTagAlbaScans(opts){
-  const recs=(await adapter.listFiles().catch(()=>dbFiles))||[];
+  opts=opts||{};
+  const all=(await adapter.listFiles().catch(()=>dbFiles))||[];
+  /* Scope to the CHECKED records (the DB basket) when asked, so the user tags one
+     selected experiment/run instead of the whole cache — and the scan numbering
+     (iso_1, ramp_up_2, …) is computed within just that checked set. */
+  let recs=all, scopedSamples=samples;
+  if(opts.checkedOnly){
+    const checked=new Set((firstBasket||[]).map(Number));
+    if(!checked.size){if(opts.toast)toast('Auto-tag: no records checked — tick the files to tag first');return 0;}
+    recs=all.filter(r=>r&&checked.has(Number(r.id)));
+    scopedSamples=samples.filter(s=>s&&s.dbId!=null&&checked.has(Number(s.dbId)));
+  }
   const names=[];
   recs.forEach(r=>{if(r&&r.name&&isAlbaFrameName(r.name))names.push(r.name);});
-  samples.forEach(s=>{const nm=s.rawName||s.name;if(nm&&isAlbaFrameName(nm))names.push(nm);});
-  if(!names.length){if(opts&&opts.toast)toast('Auto-tag: no ALBA scan files found');return 0;}
+  scopedSamples.forEach(s=>{const nm=s.rawName||s.name;if(nm&&isAlbaFrameName(nm))names.push(nm);});
+  if(!names.length){if(opts.toast)toast(opts.checkedOnly?'Auto-tag: no ALBA scan files among the checked records':'Auto-tag: no ALBA scan files found');return 0;}
   const {keyTag,types}=albaScanTagMap(names);
   const byType={};types.forEach(t=>byType[t]=1);
   const tagFor=nm=>keyTag[albaScanParts(nm).groupKey]||null;
@@ -2453,14 +2583,14 @@ async function autoTagAlbaScans(opts){
     if(after.length===before.length&&after.every(t=>before.includes(t)))continue;
     try{await adapter.saveFile({...r,id:r.id,tags:after});n++;}catch(_e){}
   }
-  samples.forEach(s=>{
+  scopedSamples.forEach(s=>{
     const nm=s.rawName||s.name;if(!nm||!isAlbaFrameName(nm))return;
     const tag=tagFor(nm);if(!tag)return;
     s.meta=s.meta||{};s.meta.tags=applyTags(s.meta.tags,tag);
   });
-  dbFiles=(await adapter.listFiles().catch(()=>dbFiles))||dbFiles;
+  dbFiles=(await adapter.listFileMeta().catch(()=>dbFiles))||dbFiles;
   try{renderDbFileList();renderFirstBasket();renderAll();}catch(_e){}
-  if(opts&&opts.toast)toast(`Auto-tag: ${n} file(s) tagged by scan name`);
+  if(opts.toast)toast(`Auto-tag: ${n} file(s) tagged by scan name`+(opts.checkedOnly?' (checked only)':''));
   return n;
 }
 
@@ -2487,7 +2617,7 @@ async function applyAlbaFrameTimes(){
     const d=new Date(ft);if(isNaN(d.getTime()))continue;
     s.timeStart=d;s.thermalTimeStartOverride=d.toISOString();
   }
-  if(n){dbFiles=(await adapter.listFiles().catch(()=>dbFiles))||dbFiles;try{renderDbFileList();renderFirstBasket();renderAll();}catch(_e){}}
+  if(n){dbFiles=(await adapter.listFileMeta().catch(()=>dbFiles))||dbFiles;try{renderDbFileList();renderFirstBasket();renderAll();}catch(_e){}}
   return n;
 }
 
@@ -3017,8 +3147,9 @@ function finishRasBatch(pendingRef){
        reaches this even though the .dat itself was skipped as a duplicate). */
     const nT=await applyAlbaFrameTimes();
     if(nT)toast(`Meas. start: dated ${nT} existing record(s) from file mtime`);
-    /* Auto-tag ALBA frames by scan name (iso_1, ramp_up_2, …); no-op for non-ALBA batches. */
-    await autoTagAlbaScans();
+    /* Scan-name auto-tagging is now a deliberate action: check the records you want and
+       press "Auto-tag checked: scan name". Tagging the whole cache on every import would
+       re-number scans across unrelated experiments, so it is no longer done automatically. */
   }).catch(err=>{console.error(err);toast('DB: '+(err.message||err));});
 }
 
@@ -3093,7 +3224,7 @@ function handleFiles(fileList){
          the file (e.g. .ras atmosphere temp), fall back to the filename. */
       /* ALBA .dat carries no temperature; a matching ExpEnv row (if already loaded)
          supplies it. Otherwise use the in-file value, falling back to the filename. */
-      const albaE=albaExpEnvMap[albaBaseName(f.name)];
+      const albaE=albaExpEnvMap[albaFrameCore(f.name)];
       if(albaE&&Number.isFinite(albaE.tempC)){
         p.tempSetPoint=albaE.tempC;p.tempStart=albaE.tempC;p.tempEnd=albaE.tempC;
         p.thermalTempOverride=albaE.tempC;p.thermalTempStartOverride=albaE.tempC;p.thermalTempEndOverride=albaE.tempC;
@@ -4104,6 +4235,73 @@ function applyBasketThin(v){
   renderPatternTree();renderOuterSegmentList();renderCombineSamplePicker();redrawOuterChart();
   toast(`Showing ${keep.size} of ${shown.length}`);
 }
+/* ---- Paging: plot the shown files in batches (page size + skip + arrows) ------
+   Windows through basketFilteredSamples() in file order. A batch is up to
+   `basketPageSize` files starting at `basketPageStart`, stepping by (skip+1).
+   Applying a batch reuses the same keep/drop logic as thinning, so per-trace
+   settings survive and traces hidden by the search box are left untouched. */
+function basketPageStepSize(){return Math.max(1,(parseInt(basketPageSkip,10)||0)+1);}
+function basketPageWindowIndices(n){
+  if(n<=0)return[];
+  const step=basketPageStepSize();
+  let start=Math.min(Math.max(0,basketPageStart|0),Math.max(0,n-1));
+  const size=basketPageSize>0?basketPageSize:Infinity; // 0 = All → every (skip+1)th across the list
+  const out=[];
+  for(let j=0,idx=start;j<size&&idx<n;j++,idx+=step)out.push(idx);
+  return out;
+}
+function applyBasketPage(){
+  const cmb=getActiveCombine();
+  if(!cmb){toast('Select or create a pattern first');return;}
+  const shown=basketFilteredSamples();
+  if(!shown.length){renderCombineSamplePicker();return;}
+  const keep=new Set(basketPageWindowIndices(shown.length).map(i=>shown[i].sampleUid));
+  const shownUids=new Set(shown.map(s=>s.sampleUid));
+  if(!Array.isArray(cmb.traces))cmb.traces=[];
+  const dropped=cmb.traces.filter(t=>shownUids.has(t.sampleUid)&&!keep.has(t.sampleUid)).map(t=>t.sampleUid);
+  cmb.traces=cmb.traces.filter(t=>!shownUids.has(t.sampleUid)||keep.has(t.sampleUid));
+  const have=new Set(cmb.traces.map(t=>t.sampleUid));
+  shown.forEach(s=>{
+    if(!keep.has(s.sampleUid)||have.has(s.sampleUid))return;
+    cmb.traces.push({sampleUid:s.sampleUid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0});
+    have.add(s.sampleUid);
+  });
+  dropped.forEach(u=>removeTraceFromDescendants(cmb.id,u));
+  renderPatternTree();renderOuterSegmentList();renderCombineSamplePicker();redrawOuterChart();
+}
+function setBasketPageSize(v){basketPageSize=Math.max(0,parseInt(v,10)||0);basketPageStart=0;applyBasketPage();}
+function setBasketPageSkip(v){basketPageSkip=Math.max(0,parseInt(v,10)||0);basketPageStart=0;applyBasketPage();}
+function basketPageNav(dir){
+  if(basketPageSize<=0)return; // "All" — nothing to page through
+  const n=basketFilteredSamples().length;
+  if(!n)return;
+  const span=Math.max(1,basketPageSize*basketPageStepSize());
+  let start=(basketPageStart|0)+dir*span;
+  if(start<0)start=0;
+  if(start>Math.max(0,n-1))return; // don't page past the end
+  basketPageStart=start;
+  applyBasketPage();
+}
+function syncBasketPageUi(shownCount){
+  const n=Math.max(0,shownCount|0);
+  if(basketPageStart>Math.max(0,n-1))basketPageStart=0;
+  const sel=document.getElementById('basketPageSize');
+  if(sel&&+sel.value!==basketPageSize)sel.value=String(basketPageSize);
+  const paged=basketPageSize>0;
+  const idxs=n?basketPageWindowIndices(n):[];
+  const last=idxs.length?idxs[idxs.length-1]:-1;
+  const step=basketPageStepSize();
+  const prev=document.getElementById('basketPagePrev');
+  const next=document.getElementById('basketPageNext');
+  const hint=document.getElementById('basketPageHint');
+  if(prev)prev.disabled=!paged||!n||basketPageStart<=0;
+  if(next)next.disabled=!paged||!n||last>=n-1;
+  if(hint){
+    if(!n)hint.textContent='';
+    else if(!paged)hint.textContent=step>1?`every ${step} → ${idxs.length} of ${n}`:`all ${n} files`;
+    else hint.textContent=`${idxs.length?idxs[0]+1:0}–${last+1} of ${n}${step>1?` · every ${step}`:''}`;
+  }
+}
 function syncBasketThinUi(shownCount,selectedShown){
   const r=document.getElementById('basketThinRange');
   const c=document.getElementById('basketThinCount');
@@ -4211,8 +4409,8 @@ function renderCombineSamplePicker(){
   if(!el)return;
   const cmb=getActiveCombine();
   const countEl=document.getElementById('basketCount');
-  if(!cmb){el.innerHTML='<div class="empty" style="padding:.4rem">Select or create a pattern</div>';if(countEl)countEl.textContent='';syncBasketThinUi(0,0);return;}
-  if(!samples.length){el.innerHTML='<div class="empty" style="padding:.4rem">No samples loaded</div>';if(countEl)countEl.textContent='';syncBasketThinUi(0,0);return;}
+  if(!cmb){el.innerHTML='<div class="empty" style="padding:.4rem">Select or create a pattern</div>';if(countEl)countEl.textContent='';syncBasketThinUi(0,0);syncBasketPageUi(0);return;}
+  if(!samples.length){el.innerHTML='<div class="empty" style="padding:.4rem">No samples loaded</div>';if(countEl)countEl.textContent='';syncBasketThinUi(0,0);syncBasketPageUi(0);return;}
   const tracedUids=new Set((cmb.traces||[]).map(t=>t.sampleUid));
   const parent=patternParent(cmb);
   const src=basketFilteredSamples();
@@ -4221,6 +4419,7 @@ function renderCombineSamplePicker(){
     countEl.textContent=`${tracedUids.size} sel / ${src.length} shown${src.length!==total?` (of ${total})`:''}`;
   }
   syncBasketThinUi(src.length,src.filter(s=>tracedUids.has(s.sampleUid)).length);
+  syncBasketPageUi(src.length);
   if(!src.length){el.innerHTML=`<div class="empty" style="padding:.4rem">${parent?'Parent has no traces to narrow':'No matches'}</div>`;return;}
   el.innerHTML=src.map(s=>{
     const on=tracedUids.has(s.sampleUid);
@@ -4559,7 +4758,7 @@ function createSeriesFromScans(){
   const groups=new Map();
   alba.forEach(s=>{
     const nm=s.rawName||s.name;
-    const det=(nm.match(/^(pilatus|rayonix)/i)||[,''])[1].toLowerCase();
+    const det=albaDetector(nm);
     const {groupKey}=albaScanParts(nm);
     const key=det+'|'+groupKey;
     if(!groups.has(key))groups.set(key,{det,groupKey,members:[]});
@@ -4645,9 +4844,14 @@ async function setXrdTraceMetaByUid(uid,field,value){
     s.meta.site=next.site;
   }
   try{
-    if(rec&&rec.id!=null)await adapter.saveFile({...rec,...next,id:rec.id});
+    if(rec&&rec.id!=null){
+      /* rec is metadata-only (dbFiles no longer carries rawText); read the full record so
+         the write keeps its content instead of blanking it. */
+      const full=await adapter.getFile(rec.id);
+      await adapter.saveFile({...(full||rec),...next,id:rec.id});
+    }
     else if(next.rawText)await adapter.saveFile(next);
-    dbFiles=await adapter.listFiles().catch(()=>dbFiles);
+    dbFiles=await adapter.listFileMeta().catch(()=>dbFiles);
   }catch(e){console.error(e);}
   redrawXrd();
   redrawOuterChart();
@@ -5459,7 +5663,7 @@ function dbFilteredFiles(){return (dbFiles||[]).filter(dbFileMatchesFilter);}
 function selectFilteredToBasket(add){
   const ids=dbFilteredFiles().map(f=>f&&f.id).filter(id=>id!=null);
   if(!ids.length){toast('No files match the current filter');return;}
-  if(add){ids.forEach(id=>{if(!firstBasket.includes(id))firstBasket.push(id);firstBasketExcluded.delete(id);});}
+  if(add){const have=new Set(firstBasket);ids.forEach(id=>{if(!have.has(id)){firstBasket.push(id);have.add(id);}firstBasketExcluded.delete(id);});}
   else{const drop=new Set(ids);firstBasket=firstBasket.filter(id=>!drop.has(id));ids.forEach(id=>firstBasketExcluded.delete(id));}
   renderFirstBasket();renderDbFileList();
   toast(`${add?'Added':'Removed'} ${ids.length} file(s) ${add?'to':'from'} basket`);
@@ -5478,13 +5682,22 @@ async function backfillFolderPaths(){
     if(!fp)continue;
     try{await adapter.saveFile({...r,id:r.id,folderPath:fp});n++;}catch(_e){}
   }
-  if(n){dbFiles=(await adapter.listFiles().catch(()=>dbFiles))||dbFiles;try{renderDbFileList();renderFirstBasket();}catch(_e){}}
+  if(n){dbFiles=(await adapter.listFileMeta().catch(()=>dbFiles))||dbFiles;try{renderDbFileList();renderFirstBasket();}catch(_e){}}
   toast(n?`Filled folder path on ${n} file(s)`:'No paths to fill (headers have no "# --> " line)');
 }
 
 
 function buildDbTreeNode(items,level,path){
   if(level>=dbTreeOrder.length||items.length<=1){
+    /* Safety cap for a huge flat leaf (e.g. grouping turned off with thousands of files):
+       building that many rows at once is slow, so render the first LEAF_CAP and note the
+       rest. All items still count for bulk actions (dbBulkShownIds) and group checkboxes;
+       narrow with a filter or add a grouping level to see individual hidden rows. */
+    const LEAF_CAP=600;
+    if(items.length>LEAF_CAP){
+      const shown=items.slice(0,LEAF_CAP).map(renderDbFileItem).join('');
+      return`<div class="db-tree-leaf">${shown}<div class="db-item" style="justify-content:center;color:var(--text3);cursor:default">… ${items.length-LEAF_CAP} more hidden here — narrow with a filter or add a grouping level</div></div>`;
+    }
     return`<div class="db-tree-leaf">${items.map(renderDbFileItem).join('')}</div>`;
   }
   const field=dbTreeOrder[level];
@@ -5648,7 +5861,7 @@ async function backfillDatasetNames(){
 }
 async function refreshDbPanels(){
   try{
-    dbFiles=await adapter.listFiles().catch(()=>[]);
+    dbFiles=await adapter.listFileMeta().catch(()=>[]);
     dbProjects=await adapter.listProjects().catch(()=>[]);
     dbThermalSeries=await adapter.listThermalSeries().catch(()=>[]);
     if(!Array.isArray(dbFiles))dbFiles=[];
@@ -5798,7 +6011,7 @@ async function persistSampleMetaToDb(s){
     const startIso=s.thermalTimeStartOverride||(s.timeStart?s.timeStart.toISOString():(rec.measurementStartIso||null));
     const endIso=s.thermalTimeEndOverride||(s.timeEnd?s.timeEnd.toISOString():(rec.measurementEndIso||null));
     await adapter.saveFile({...rec,id:rec.id,tempC:Number.isFinite(tempC)?tempC:null,measurementStartIso:startIso,measurementEndIso:endIso});
-    dbFiles=await adapter.listFiles().catch(()=>dbFiles);
+    dbFiles=await adapter.listFileMeta().catch(()=>dbFiles);
     renderDbFileList();renderFirstBasket();
   }catch(e){console.error(e);}
 }
@@ -6488,7 +6701,7 @@ async function confirmFileMetaEdit(){
       saved.datasetNameLocked=!!datasetNameIn;
     }
     await adapter.saveFile(saved);
-    dbFiles=await adapter.listFiles().catch(()=>[]);
+    dbFiles=await adapter.listFileMeta().catch(()=>[]);
     renderDbFileList();renderFirstBasket();
     // reflect the edit into an already-loaded sample (and its plot) right away
     const loaded=samples.find(s=>s.dbId===id);
@@ -6611,7 +6824,16 @@ async function deleteDbBulkSelected(){
   }
   closeDbBulkEditModal();
   let ok=0,fail=0;
-  for(const id of ids){try{await adapter.deleteFile(id);ok++;}catch(e){fail++;console.error('bulk delete',id,e);}}
+  const DEL_CHUNK=250;
+  for(let i=0;i<ids.length;i+=DEL_CHUNK){
+    const slice=ids.slice(i,i+DEL_CHUNK);
+    try{await adapter.deleteFilesBulk(slice);ok+=slice.length;}
+    catch(e){fail+=slice.length;console.error('bulk delete chunk',e);}
+    if(ids.length>DEL_CHUNK){
+      toast(`Deleting ${Math.min(i+DEL_CHUNK,ids.length)}/${ids.length}…`);
+      await new Promise(r=>setTimeout(r,0));
+    }
+  }
   let featOk=0;
   if(dropFeatures){
     for(const f of linked){try{await adapter.deleteFeature(f.id);featOk++;}catch(e){console.error('feature delete',f.id,e);}}
@@ -6663,44 +6885,67 @@ async function confirmDbBulkEdit(){
   const tempC=tVal===''?null:parseFloat(tVal);
   closeDbBulkEditModal();
   if(setDs){try{await ensureDatasetSeqCounter();}catch(_e){if(datasetSeqCounter==null)datasetSeqCounter=0;}}
+  /* In-memory lookups so a 1000+ file edit doesn't do 2000+ IndexedDB round-trips or an
+     O(n^2) samples.find per id. Records come from the already-loaded dbFiles list. */
+  const recById=new Map();
+  (dbFiles||[]).forEach(f=>{if(f&&f.id!=null)recById.set(f.id,f);});
+  const sampleByDbId=new Map();
+  samples.forEach(s=>{if(s&&s.dbId!=null)sampleByDbId.set(s.dbId,s);});
+  const editedAt=new Date().toISOString();
   let ok=0,fail=0,touchedLoaded=false,dsRenamed=0,dsLocked=0;
-  for(const id of ids){
-    try{
-      const rec=await adapter.getFile(id);
+  /* Build a metadata DELTA per file and merge it in-place via patchFilesBulk: the stored
+     record's rawText is preserved (dbFiles no longer carries it), and each chunk is one
+     IndexedDB transaction. We yield to the UI between chunks so the page stays responsive
+     and shows progress; only one chunk of small deltas exists at a time. */
+  const CHUNK=250;
+  for(let i=0;i<ids.length;i+=CHUNK){
+    const chunkIds=ids.slice(i,i+CHUNK);
+    const updates=[];
+    for(const id of chunkIds){
+      let rec=recById.get(id);
+      if(!rec){try{rec=await adapter.getFile(id);}catch(_e){rec=null;}}
       if(!rec){fail++;continue;}
-      const patch={...rec,id};
-      if(setLabel)patch.sampleLabel=sampleLabel;
+      const delta={};
+      if(setLabel)delta.sampleLabel=sampleLabel;
       if(setTags){
         const cur=dbFileTags(rec);
-        if(tagsMode==='add'){const m=[...cur];tagsInput.forEach(t=>{if(!m.includes(t))m.push(t);});patch.tags=m;}
-        else if(tagsMode==='remove')patch.tags=cur.filter(t=>!tagsInput.includes(t));
-        else patch.tags=tagsInput;
+        if(tagsMode==='add'){const m=[...cur];tagsInput.forEach(t=>{if(!m.includes(t))m.push(t);});delta.tags=m;}
+        else if(tagsMode==='remove')delta.tags=cur.filter(t=>!tagsInput.includes(t));
+        else delta.tags=tagsInput;
       }
-      if(setInst)patch.instrument=instrument;
-      if(setSite)patch.site=site;
-      if(setCap)patch.capillarySize=Number.isFinite(capillarySize)?capillarySize:null;
-      if(setMt)patch.measurementTimeMin=Number.isFinite(measurementTimeMin)?measurementTimeMin:null;
-      if(setMs)patch.measurementStartIso=msIso;
-      if(setMe)patch.measurementEndIso=meIso;
-      if(setT)patch.tempC=Number.isFinite(tempC)?tempC:null;
+      if(setInst)delta.instrument=instrument;
+      if(setSite)delta.site=site;
+      if(setCap)delta.capillarySize=Number.isFinite(capillarySize)?capillarySize:null;
+      if(setMt)delta.measurementTimeMin=Number.isFinite(measurementTimeMin)?measurementTimeMin:null;
+      if(setMs)delta.measurementStartIso=msIso;
+      if(setMe)delta.measurementEndIso=meIso;
+      if(setT)delta.tempC=Number.isFinite(tempC)?tempC:null;
       /* Rebuild the dataset name from the values just applied. The sequence number is
          reused so a file keeps its identity, and hand-typed names are left alone. */
       if(setDs){
-        if(patch.datasetNameLocked){dsLocked++;}
+        if(rec.datasetNameLocked){dsLocked++;}
         else{
-          if(!isValidDatasetSeq(patch.datasetSeq))patch.datasetSeq=allocDatasetSeq();
-          patch.datasetName=buildDatasetName(patch,patch.datasetSeq);
+          let seq=rec.datasetSeq;
+          if(!isValidDatasetSeq(seq)){seq=allocDatasetSeq();delta.datasetSeq=seq;}
+          delta.datasetName=buildDatasetName({...rec,...delta,datasetSeq:seq},seq);
           dsRenamed++;
         }
       }
-      patch.editedAt=new Date().toISOString();
-      await adapter.saveFile(patch);
-      const loaded=samples.find(s=>s.dbId===id);
-      if(loaded){applyDbRecordMeta(loaded,patch);touchedLoaded=true;}
-      ok++;
-    }catch(e){console.error('bulk edit',id,e);fail++;}
+      delta.editedAt=editedAt;
+      updates.push({id,patch:delta});
+      const loaded=sampleByDbId.get(id);
+      if(loaded){applyDbRecordMeta(loaded,{...rec,...delta});touchedLoaded=true;}
+    }
+    if(updates.length){
+      try{const n=await adapter.patchFilesBulk(updates);ok+=n;fail+=(updates.length-n);}
+      catch(e){console.error('bulk edit chunk',e);fail+=updates.length;}
+    }
+    if(ids.length>CHUNK){
+      toast(`Bulk edit: saving ${Math.min(i+CHUNK,ids.length)}/${ids.length}…`);
+      await new Promise(r=>setTimeout(r,0)); /* let the UI paint the progress */
+    }
   }
-  dbFiles=await adapter.listFiles().catch(()=>dbFiles);
+  dbFiles=await adapter.listFileMeta().catch(()=>dbFiles);
   renderDbFileList();renderFirstBasket();
   if(touchedLoaded){renderAll();if(basketPlotted)redrawBasketParentPlot();}
   toast(`Bulk edit: updated ${ok} file(s)${fail?`, ${fail} failed`:''}`
