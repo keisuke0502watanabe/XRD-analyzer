@@ -7391,35 +7391,63 @@ async function buildDbExportPayload(){
      version 5 = adds the interpretation log (keyed to features by featUid). */
   return {version:5,app:'xrd_th',exportedAt:new Date().toISOString(),files:await adapter.listFiles(),projects:await adapter.listProjects(),thermalSeriesPresets,xrdFeatures,interpretations};
 }
-/* Serialize the DB payload as an array of small JSON string parts instead of one
-   giant string. JSON.stringify() of the whole payload throws "Invalid string
-   length" once the DB is big enough (V8 caps strings at ~5.3e8 chars, and pretty
-   printing inflates arrays past that). Each record is stringified on its own, so
-   no single string is ever large; the parts are streamed to disk (or handed to
-   Blob(), which concatenates them without building one JS string). Compact, not
-   pretty — import uses JSON.parse and doesn't care about whitespace. */
-function buildDbExportParts(payload){
-  const parts=['{'];
-  parts.push('"version":'+JSON.stringify(payload.version));
-  parts.push(',"app":'+JSON.stringify(payload.app));
-  parts.push(',"exportedAt":'+JSON.stringify(payload.exportedAt));
-  for(const key of ['files','projects','thermalSeriesPresets','xrdFeatures','interpretations']){
-    parts.push(','+JSON.stringify(key)+':[');
-    const arr=Array.isArray(payload[key])?payload[key]:[];
-    for(let i=0;i<arr.length;i++)parts.push((i?',':'')+JSON.stringify(arr[i]));
-    parts.push(']');
+/* Cheap record count for one store (used to decide "DB is empty" without loading it). */
+function countDbStore(storeName){
+  return adapter.open().then(db=>new Promise((res,rej)=>{
+    if(!db.objectStoreNames.contains(storeName))return res(0);
+    const tx=db.transaction(storeName,'readonly');
+    const rq=tx.objectStore(storeName).count();
+    rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);
+  }));
+}
+/* Stream one object store's records to write() as the *body* of a JSON array
+   (caller writes the surrounding [ ]). Records are pulled from IndexedDB in
+   bounded batches — paged by the autoIncrement 'id' primary key via
+   lowerBound(lastId, true) — so the whole store is NEVER materialised in memory
+   at once. This is what keeps a large DB from OOM-crashing the renderer
+   ("Error code: 5") the way buildDbExportPayload()+one big serialize did. */
+async function streamDbStoreArray(storeName,write){
+  const db=await adapter.open();
+  if(!db.objectStoreNames.contains(storeName))return;
+  const BATCH=300;let after,first=true;
+  while(true){
+    const rows=await new Promise((res,rej)=>{
+      const out=[];
+      const tx=db.transaction(storeName,'readonly');
+      const st=tx.objectStore(storeName);
+      const range=after===undefined?null:IDBKeyRange.lowerBound(after,true);
+      const rq=st.openCursor(range);
+      rq.onsuccess=e=>{const c=e.target.result;if(!c||out.length>=BATCH)return;out.push(c.value);after=c.primaryKey;c.continue();};
+      rq.onerror=()=>rej(rq.error);
+      tx.oncomplete=()=>res(out);
+      tx.onerror=()=>rej(tx.error);
+    });
+    if(!rows.length)break;
+    let chunk='';
+    for(const rec of rows){chunk+=(first?'':',')+JSON.stringify(rec);first=false;}
+    await write(chunk);
+    if(rows.length<BATCH)break;
   }
-  parts.push('}');
-  return parts;
+}
+/* Write the whole DB dump as compact JSON to a write(str) sink, streamed from
+   IndexedDB (see streamDbStoreArray). Same shape/key-order as the old
+   buildDbExportPayload so existing dumps and DB Import stay compatible. */
+async function streamDbExportTo(write){
+  await write('{"version":5,"app":"xrd_th","exportedAt":'+JSON.stringify(new Date().toISOString()));
+  for(const [outKey,store] of [['files','files'],['projects','projects'],
+      ['thermalSeriesPresets','thermalSeries'],['xrdFeatures','xrdFeatures'],['interpretations','interpretations']]){
+    await write(','+JSON.stringify(outKey)+':[');
+    await streamDbStoreArray(store,write);
+    await write(']');
+  }
+  await write('}');
 }
 async function exportFullDb(){
   const filename=`xrd_th_db_full_${stamp()}.json`;
   /* Prefer a native Save dialog (Chrome/Edge on a secure origin incl. localhost):
      the user picks the location so it's obvious the export started, and the dump
-     streams straight to disk instead of building a giant blob: URL that can
-     silently fail. The picker must be opened FIRST, while the click's user
-     activation is still fresh — before the (possibly slow) payload build.
-     Safari/iPad (no showSaveFilePicker) fall through to the blob download. */
+     streams straight to disk. Must open the picker FIRST, while the click's user
+     activation is fresh. Safari/iPad (no showSaveFilePicker) fall through below. */
   if(window.isSecureContext&&typeof window.showSaveFilePicker==='function'){
     let handle;
     try{
@@ -7427,26 +7455,28 @@ async function exportFullDb(){
         types:[{description:'JSON',accept:{'application/json':['.json']}}]});
     }catch(e){if(e&&e.name==='AbortError'){toast('DB export cancelled');return;}handle=null;}
     if(handle){
+      const w=await handle.createWritable();
       try{
-        toast('Building DB export…');
-        const parts=buildDbExportParts(await buildDbExportPayload());
-        const w=await handle.createWritable();
-        let buf='';
-        for(const s of parts){buf+=s;if(buf.length>=8*1024*1024){await w.write(buf);buf='';}}
-        if(buf)await w.write(buf);
+        toast('Exporting DB…');
+        await streamDbExportTo(s=>w.write(s));
         await w.close();
         toast('DB exported → '+handle.name);
-      }catch(e){console.error(e);toast('DB export failed: '+(e.message||e));}
+      }catch(e){try{await w.abort();}catch(_){}console.error(e);toast('DB export failed: '+(e.message||e));}
       return;
     }
   }
-  toast('Building DB export…');
-  const parts=buildDbExportParts(await buildDbExportPayload());
-  const blob=new Blob(parts,{type:'application/json;charset=utf-8'});
-  const url=URL.createObjectURL(blob);const a=document.createElement('a');
-  a.href=url;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();
-  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1000);
-  toast('DB exported (check your Downloads folder)');
+  /* Fallback: collect the streamed parts into a Blob (holds only the serialised
+     strings, not the JS object graph, and never one > max-length string). */
+  toast('Exporting DB…');
+  try{
+    const parts=[];
+    await streamDbExportTo(s=>{parts.push(s);});
+    const blob=new Blob(parts,{type:'application/json;charset=utf-8'});
+    const url=URL.createObjectURL(blob);const a=document.createElement('a');
+    a.href=url;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();
+    setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1000);
+    toast('DB exported (check your Downloads folder)');
+  }catch(e){console.error(e);toast('DB export failed: '+(e.message||e));}
 }
 
 /** Auto-backup the whole DB to a user-chosen local folder (File System Access API).
@@ -7536,20 +7566,30 @@ const autoBackup={
       await w.close();
     }catch(e){try{await w.abort();}catch(_){}throw e;}
   },
+  /* Like writeJsonStreamed but pulls records straight from IndexedDB in batches
+     (streamDbExportTo) so the whole DB is never materialised — a large cache
+     used to OOM-crash the tab when buildDbExportPayload() loaded it all up. */
+  async writeDbStreamed(name){
+    const fh=await this.handle.getFileHandle(name,{create:true});
+    const w=await fh.createWritable();
+    try{await streamDbExportTo(s=>w.write(s));await w.close();}
+    catch(e){try{await w.abort();}catch(_){}throw e;}
+  },
   async writeNow(announce){
     if(!this.handle)return;
     if(await this.queryPerm(this.handle)!=='granted'){this.setState('reconnect');if(announce)toast('Backup needs folder reconnect.');return;}
     try{
-      const payload=await buildDbExportPayload();
       // Don't clobber existing backups with an empty snapshot (e.g. after an accidental Clear).
-      if(!payload.files.length&&!payload.projects.length&&!payload.thermalSeriesPresets.length&&!(payload.xrdFeatures||[]).length&&!(payload.interpretations||[]).length){
+      // Count instead of loading the whole DB — the full dump can be too big to hold in memory.
+      const counts=await Promise.all(['files','projects','thermalSeries','xrdFeatures','interpretations'].map(s=>countDbStore(s).catch(()=>0)));
+      if(counts.reduce((a,b)=>a+b,0)===0){
         if(announce)toast('Nothing to back up (DB is empty).');
         return;
       }
       const d=new Date(),pad=n=>String(n).padStart(2,'0');
       const day=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
-      await this.writeJsonStreamed('xrd_th_db_latest.json',payload);
-      await this.writeJsonStreamed(`xrd_th_db_${day}.json`,payload);
+      await this.writeDbStreamed('xrd_th_db_latest.json');
+      await this.writeDbStreamed(`xrd_th_db_${day}.json`);
       this.lastBackupAt=new Date();
       this.updateUi();
       if(announce)toast('Backup saved to folder');
