@@ -7391,11 +7391,32 @@ async function buildDbExportPayload(){
      version 5 = adds the interpretation log (keyed to features by featUid). */
   return {version:5,app:'xrd_th',exportedAt:new Date().toISOString(),files:await adapter.listFiles(),projects:await adapter.listProjects(),thermalSeriesPresets,xrdFeatures,interpretations};
 }
+/* Serialize the DB payload as an array of small JSON string parts instead of one
+   giant string. JSON.stringify() of the whole payload throws "Invalid string
+   length" once the DB is big enough (V8 caps strings at ~5.3e8 chars, and pretty
+   printing inflates arrays past that). Each record is stringified on its own, so
+   no single string is ever large; the parts are streamed to disk (or handed to
+   Blob(), which concatenates them without building one JS string). Compact, not
+   pretty — import uses JSON.parse and doesn't care about whitespace. */
+function buildDbExportParts(payload){
+  const parts=['{'];
+  parts.push('"version":'+JSON.stringify(payload.version));
+  parts.push(',"app":'+JSON.stringify(payload.app));
+  parts.push(',"exportedAt":'+JSON.stringify(payload.exportedAt));
+  for(const key of ['files','projects','thermalSeriesPresets','xrdFeatures','interpretations']){
+    parts.push(','+JSON.stringify(key)+':[');
+    const arr=Array.isArray(payload[key])?payload[key]:[];
+    for(let i=0;i<arr.length;i++)parts.push((i?',':'')+JSON.stringify(arr[i]));
+    parts.push(']');
+  }
+  parts.push('}');
+  return parts;
+}
 async function exportFullDb(){
   const filename=`xrd_th_db_full_${stamp()}.json`;
   /* Prefer a native Save dialog (Chrome/Edge on a secure origin incl. localhost):
-     the user picks the location so it's obvious the export started, and a large
-     dump streams straight to disk instead of building a giant blob: URL that can
+     the user picks the location so it's obvious the export started, and the dump
+     streams straight to disk instead of building a giant blob: URL that can
      silently fail. The picker must be opened FIRST, while the click's user
      activation is still fresh — before the (possibly slow) payload build.
      Safari/iPad (no showSaveFilePicker) fall through to the blob download. */
@@ -7408,16 +7429,23 @@ async function exportFullDb(){
     if(handle){
       try{
         toast('Building DB export…');
-        const text=JSON.stringify(await buildDbExportPayload(),null,2);
+        const parts=buildDbExportParts(await buildDbExportPayload());
         const w=await handle.createWritable();
-        await w.write(text);await w.close();
+        let buf='';
+        for(const s of parts){buf+=s;if(buf.length>=8*1024*1024){await w.write(buf);buf='';}}
+        if(buf)await w.write(buf);
+        await w.close();
         toast('DB exported → '+handle.name);
       }catch(e){console.error(e);toast('DB export failed: '+(e.message||e));}
       return;
     }
   }
   toast('Building DB export…');
-  downloadText(filename,JSON.stringify(await buildDbExportPayload(),null,2));
+  const parts=buildDbExportParts(await buildDbExportPayload());
+  const blob=new Blob(parts,{type:'application/json;charset=utf-8'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');
+  a.href=url;a.download=filename;a.style.display='none';document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1000);
   toast('DB exported (check your Downloads folder)');
 }
 
