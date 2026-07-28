@@ -2569,9 +2569,23 @@ function parseAlbaExpEnv(text){
   return Object.keys(map).length?map:null;
 }
 
+/** Merge one ExpEnv map into another WITHOUT letting a missing field clobber a present
+    one. A pyFAI "*_header.txt" carries temperature but no uxtimer, so its {timeIso:null}
+    entry must not wipe the real uxtimer an ExpEnv ".alba" (or RAW .edf) already supplied
+    for the same frame — and vice versa. Field-wise: keep any non-null time / finite temp. */
+function mergeExpEnvInto(dst,src){
+  for(const [k,v] of Object.entries(src||{})){
+    if(!v)continue;
+    const cur=dst[k];
+    if(!cur){dst[k]={tempC:v.tempC??null,timeIso:v.timeIso??null};continue;}
+    if(v.timeIso!=null)cur.timeIso=v.timeIso;
+    if(Number.isFinite(v.tempC))cur.tempC=v.tempC;
+  }
+  return dst;
+}
 /** Stamp ExpEnv temperature/time onto matching cached records and loaded samples. */
 async function applyAlbaExpEnv(newMap){
-  if(newMap&&Object.keys(newMap).length)Object.assign(albaExpEnvMap,newMap);
+  if(newMap&&Object.keys(newMap).length)mergeExpEnvInto(albaExpEnvMap,newMap);
   if(!Object.keys(albaExpEnvMap).length)return 0;
   let n=0;
   const recs=await adapter.listFiles().catch(()=>dbFiles);
@@ -2581,7 +2595,8 @@ async function applyAlbaExpEnv(newMap){
     if(!e)continue;
     const patch={...rec,id:rec.id};let changed=false;
     if(Number.isFinite(e.tempC)&&rec.tempC!==e.tempC){patch.tempC=e.tempC;changed=true;}
-    if(e.timeIso&&!rec.measurementStartIso){patch.measurementStartIso=e.timeIso;changed=true;}
+    /* Uxtimer wins over an mtime-derived (or missing) record time, but not a manual edit. */
+    if(e.timeIso&&rec.timeSrc!=='manual'&&rec.measurementStartIso!==e.timeIso){patch.measurementStartIso=e.timeIso;patch.timeSrc='expenv';changed=true;}
     if(changed){try{await adapter.saveFile(patch);n++;}catch(_e){}}
   }
   for(const s of samples){
@@ -2592,7 +2607,10 @@ async function applyAlbaExpEnv(newMap){
       s.thermalTempOverride=e.tempC;s.thermalTempStartOverride=e.tempC;s.thermalTempEndOverride=e.tempC;
       try{refreshSegmentsForSample(s);}catch(_e){}
     }
-    if(e.timeIso&&!s.timeStart){const d=new Date(e.timeIso);if(!isNaN(d.getTime())){s.timeStart=d;s.thermalTimeStartOverride=d.toISOString();}}
+    /* ExpEnv / RAW .edf uxtimer is the true acquisition time — it OVERRIDES a time that
+       was only guessed from the file mtime (which an sftp copy can reorder/rescale),
+       but never a genuine manual edit. */
+    if(e.timeIso&&s._timeSrc!=='manual'){const d=new Date(e.timeIso);if(!isNaN(d.getTime())){s.timeStart=d;s.thermalTimeStartOverride=d.toISOString();s._timeSrc='expenv';}}
   }
   dbFiles=await adapter.listFileMeta().catch(()=>dbFiles);
   renderDbFileList();renderFirstBasket();
@@ -2792,14 +2810,14 @@ async function applyAlbaFrameTimes(){
     const ft=albaFrameTimeMap[albaFrameKey(rec.name)];
     if(!Number.isFinite(ft))continue;
     const d=new Date(ft);if(isNaN(d.getTime()))continue;
-    try{await adapter.saveFile({...rec,id:rec.id,measurementStartIso:d.toISOString()});n++;}catch(_e){}
+    try{await adapter.saveFile({...rec,id:rec.id,measurementStartIso:d.toISOString(),timeSrc:'mtime'});n++;}catch(_e){}
   }
   for(const s of samples){
     if(!(s.meta&&s.meta.albaQ)||s.timeStart instanceof Date)continue;
     const ft=albaFrameTimeMap[albaFrameKey(s.rawName||s.name)];
     if(!Number.isFinite(ft))continue;
     const d=new Date(ft);if(isNaN(d.getTime()))continue;
-    s.timeStart=d;s.thermalTimeStartOverride=d.toISOString();
+    s.timeStart=d;s.thermalTimeStartOverride=d.toISOString();s._timeSrc='mtime';
   }
   if(n){dbFiles=(await adapter.listFileMeta().catch(()=>dbFiles))||dbFiles;try{renderDbFileList();renderFirstBasket();renderAll();}catch(_e){}}
   return n;
@@ -3345,7 +3363,7 @@ function handleFiles(fileList){
   if(expEnv.length){
     Promise.all(expEnv.map(f=>readTextFile(f).catch(()=>null))).then(async texts=>{
       const merged={};
-      texts.forEach(t=>{const m=t&&parseAlbaExpEnv(t);if(m)Object.assign(merged,m);});
+      texts.forEach(t=>{const m=t&&parseAlbaExpEnv(t);if(m)mergeExpEnvInto(merged,m);});
       if(Object.keys(merged).length){
         const n=await applyAlbaExpEnv(merged);
         toast(`ExpEnv: temperature linked to ${n} pattern(s)`);
@@ -3370,7 +3388,7 @@ function handleFiles(fileList){
       const worker=async()=>{
         while(cur<edf.length){
           const f=edf[cur++];
-          try{const t=await readFileHeadText(f);const m=parseEdfHeaderExpEnv(t,f.name);if(m)Object.assign(merged,m);}catch(_e){}
+          try{const t=await readFileHeadText(f);const m=parseEdfHeaderExpEnv(t,f.name);if(m)mergeExpEnvInto(merged,m);}catch(_e){}
         }
       };
       const POOL=Math.min(4,edf.length);
@@ -3441,13 +3459,14 @@ function handleFiles(fileList){
       if(albaE&&Number.isFinite(albaE.tempC)){
         p.tempSetPoint=albaE.tempC;p.tempStart=albaE.tempC;p.tempEnd=albaE.tempC;
         p.thermalTempOverride=albaE.tempC;p.thermalTempStartOverride=albaE.tempC;p.thermalTempEndOverride=albaE.tempC;
-        if(albaE.timeIso&&!p.timeStart){const d=new Date(albaE.timeIso);if(!isNaN(d.getTime()))p.timeStart=d;}
+        if(albaE.timeIso&&!p.timeStart){const d=new Date(albaE.timeIso);if(!isNaN(d.getTime())){p.timeStart=d;p._timeSrc='expenv';}}
       }
       /* No in-file/ExpEnv timestamp for ALBA .dat: fall back to the mtime-derived
-         acquisition time (shared across detectors by frame index). */
+         acquisition time (shared across detectors by frame index). Marked 'mtime' so a
+         later ExpEnv/.edf uxtimer can override it (applyAlbaExpEnv). */
       if(p.meta&&p.meta.albaQ&&!(p.timeStart instanceof Date)){
         const ft=albaFrameTimeMap[albaFrameKey(f.name)];
-        if(Number.isFinite(ft)){const d=new Date(ft);if(!isNaN(d.getTime())){p.timeStart=d;p.thermalTimeStartOverride=d.toISOString();}}
+        if(Number.isFinite(ft)){const d=new Date(ft);if(!isNaN(d.getTime())){p.timeStart=d;p.thermalTimeStartOverride=d.toISOString();p._timeSrc='mtime';}}
       }
       const tempCForDb=Number.isFinite(p.tempSetPoint)?p.tempSetPoint
         :(Number.isFinite(p.tempStart)?p.tempStart:parseTempFromFilename(f.name));
@@ -3479,7 +3498,7 @@ function handleFiles(fileList){
          at import so the DB list is filterable/groupable by scattering regime. */
       const albaTypeTag=albaDetectorTypeTag(p,f.name);
       const initialTags=albaTypeTag?[albaTypeTag]:[];
-      const dbPayload={name:f.name,rawText,contentHash,rowCount:p.tth.length,folderPath:folderForDb,tempC:tempCForDb,sampleLabel:'',tags:initialTags,instrument:instrumentForDb,site:siteForDb,lambdaA:lambdaForDb,capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null,uploadedAt:new Date().toISOString()};
+      const dbPayload={name:f.name,rawText,contentHash,rowCount:p.tth.length,folderPath:folderForDb,tempC:tempCForDb,sampleLabel:'',tags:initialTags,instrument:instrumentForDb,site:siteForDb,lambdaA:lambdaForDb,capillarySize:null,measurementTimeMin:null,measurementStartIso:p.timeStart?p.timeStart.toISOString():null,measurementEndIso:p.timeEnd?p.timeEnd.toISOString():null,timeSrc:p._timeSrc||null,uploadedAt:new Date().toISOString()};
       /* Import-time identity. sampleLabel is still blank here — the post-upload bulk edit
          regenerates the name once the user fills it in (see confirmDbBulkEdit). */
       dbPayload.measurementKey=measurementKey;
@@ -4807,12 +4826,14 @@ function pruneThermalSeriesMissingMembers(){
 function setThermalTimeStartOverride(i,v){
   const d=parseDatetimeLocalToDate(v);
   samples[i].thermalTimeStartOverride=d?d.toISOString():null;
+  if(d){samples[i].timeStart=d;samples[i]._timeSrc='manual';}
   refreshSegmentsForSample(samples[i]);renderAll();
   persistSampleMetaToDb(samples[i]);
 }
 function setThermalTimeEndOverride(i,v){
   const d=parseDatetimeLocalToDate(v);
   samples[i].thermalTimeEndOverride=d?d.toISOString():null;
+  if(d){samples[i].timeEnd=d;samples[i]._timeSrc='manual';}
   refreshSegmentsForSample(samples[i]);renderAll();
   persistSampleMetaToDb(samples[i]);
 }
@@ -5060,12 +5081,12 @@ async function setXrdTraceMetaByUid(uid,field,value){
     s.meta.measurementTimeMin=next.measurementTimeMin;
   }else if(field==='measurementStartIso'){
     const iso=dbLocalInputToIso(value);
-    next.measurementStartIso=iso;
-    if(iso)s.timeStart=new Date(iso);
+    next.measurementStartIso=iso;next.timeSrc='manual';
+    if(iso){s.timeStart=new Date(iso);s._timeSrc='manual';}
   }else if(field==='measurementEndIso'){
     const iso=dbLocalInputToIso(value);
-    next.measurementEndIso=iso;
-    if(iso)s.timeEnd=new Date(iso);
+    next.measurementEndIso=iso;next.timeSrc='manual';
+    if(iso){s.timeEnd=new Date(iso);s._timeSrc='manual';}
   }else if(field==='tempC'){
     const n=parseFloat(value);
     next.tempC=Number.isFinite(n)?n:null;
@@ -6293,6 +6314,7 @@ function applyDbRecordMeta(p,rec){
   if(Number.isFinite(+rec.lambdaA)&&+rec.lambdaA>0)p.meta.lambda=+rec.lambdaA;
   if(Number.isFinite(+rec.capillarySize))p.meta.capillarySize=+rec.capillarySize;
   if(Number.isFinite(+rec.measurementTimeMin))p.meta.measurementTimeMin=+rec.measurementTimeMin;
+  if(rec.timeSrc)p._timeSrc=rec.timeSrc;
   if(rec.measurementStartIso){const d=new Date(rec.measurementStartIso);if(!isNaN(d.getTime())){p.timeStart=d;p.thermalTimeStartOverride=d.toISOString();}}
   if(rec.measurementEndIso){const d=new Date(rec.measurementEndIso);if(!isNaN(d.getTime())){p.timeEnd=d;p.thermalTimeEndOverride=d.toISOString();}}
   if(rec.tempC!=null&&Number.isFinite(+rec.tempC)){const n=+rec.tempC;p.thermalTempOverride=n;p.thermalTempStartOverride=n;p.thermalTempEndOverride=n;p.tempSetPoint=n;p.tempStart=n;p.tempEnd=n;}
@@ -6309,7 +6331,7 @@ async function persistSampleMetaToDb(s){
       :(Number.isFinite(+s.tempSetPoint)?+s.tempSetPoint:null);
     const startIso=s.thermalTimeStartOverride||(s.timeStart?s.timeStart.toISOString():(rec.measurementStartIso||null));
     const endIso=s.thermalTimeEndOverride||(s.timeEnd?s.timeEnd.toISOString():(rec.measurementEndIso||null));
-    await adapter.saveFile({...rec,id:rec.id,tempC:Number.isFinite(tempC)?tempC:null,measurementStartIso:startIso,measurementEndIso:endIso});
+    await adapter.saveFile({...rec,id:rec.id,tempC:Number.isFinite(tempC)?tempC:null,measurementStartIso:startIso,measurementEndIso:endIso,timeSrc:s._timeSrc||rec.timeSrc||null});
     dbFiles=await adapter.listFileMeta().catch(()=>dbFiles);
     renderDbFileList();renderFirstBasket();
   }catch(e){console.error(e);}
