@@ -3433,14 +3433,20 @@ function handleFiles(fileList){
     try{asBuffer?r.readAsArrayBuffer(f):r.readAsText(f,encoding||'ISO-8859-1');}
     catch(e){reject(e);}
   });
-  const processOne=async(f,idx)=>{
-    const isHDF5=/\.(hdf5|h5)$/i.test(f.name);
-    let raw;
-    try{raw=await readFileAs(f,isHDF5);}
-    catch(err){toast(`Read failed: ${f.name} - ${(err&&(err.message||err.name))||err}`);return;}
+  const processOne=async(f,idx,pre)=>{
+    const isHDF5=pre?!!pre.isHDF5:/\.(hdf5|h5)$/i.test(f.name);
+    /* Content was pre-read in bulk (see the read phase below) so the dropped File handle
+       was consumed while still valid. pre.err = that read failed. Fall back to a fresh read
+       only when no pre-read was supplied (small drops / callers without the read phase). */
+    let raw=pre?pre.raw:undefined;
+    if(pre&&pre.err){toast(`Read failed: ${f.name} - ${pre.err}`);return;}
+    if(raw===undefined){
+      try{raw=await readFileAs(f,isHDF5);}
+      catch(err){toast(`Read failed: ${f.name} - ${(err&&(err.message||err.name))||err}`);return;}
+    }
     try{
       let p=await Promise.resolve(parseAny(f,raw));
-      /* .ras fallback: retry with UTF-8 */
+      /* .ras fallback: retry with UTF-8 (re-read; rare, small lab files only) */
       if(!p&&!isHDF5&&typeof raw==='string'){
         try{const t2=await readFileAs(f,false,'UTF-8');p=await Promise.resolve(parseAny(f,String(t2)));}catch(_){}
       }
@@ -3545,6 +3551,25 @@ function handleFiles(fileList){
         texts.forEach(t=>{const m=t&&parseAlbaExpEnv(t);if(m)mergeExpEnvInto(dropExpEnv,m);});
       }catch(_e){}
     }
+    /* READ PHASE — pull every dropped file into memory FIRST, while its File handle is
+       still valid. A drag-dropped folder's handles (from webkitGetAsEntry→entry.file) are
+       short-lived: on a >1000-file drop, a read-as-you-save pool doesn't reach the later
+       files until many slow IndexedDB writes later, by which point the handle is dead and
+       the read throws FileError code 5 (forcing a reload). Front-loading the reads keeps the
+       handle-touching work to a fast first pass; the slow DB work below never touches files. */
+    const preRead=new Array(list.length);
+    {
+      let rc=0;
+      const RPOOL=Math.min(6,list.length);
+      const rworker=async()=>{
+        while(rc<list.length){
+          const i=rc++;const f=list[i];const isHDF5=/\.(hdf5|h5)$/i.test(f.name);
+          try{preRead[i]={isHDF5,raw:await readFileAs(f,isHDF5)};}
+          catch(err){preRead[i]={isHDF5,err:(err&&(err.message||err.name))||String(err)};}
+        }
+      };
+      await Promise.all(Array.from({length:RPOOL},()=>rworker()));
+    }
     try{
       const existing=await adapter.listFiles();
       const incomingNames=new Set(list.map(f=>f.name));
@@ -3567,7 +3592,7 @@ function handleFiles(fileList){
     try{await ensureDatasetSeqCounter();}catch(_e){if(datasetSeqCounter==null)datasetSeqCounter=0;}
     let cursor=0;
     const POOL=Math.min(4,list.length);
-    const worker=async()=>{while(cursor<list.length){const i=cursor++;await processOne(list[i],i);}};
+    const worker=async()=>{while(cursor<list.length){const i=cursor++;await processOne(list[i],i,preRead[i]);preRead[i]=null;/* free the buffer as soon as it's consumed */}};
     await Promise.all(Array.from({length:POOL},()=>worker()));
     /* Tier 2, once per drop: anything already cached that is the SAME frame as a file just
        added — but a different integration — is marked superseded. Files from this same drop
