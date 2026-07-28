@@ -355,6 +355,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <button class="btn" id="dbBulkClearBtn" onclick="clearFirstBasket()" disabled>Clear basket</button>
             <button class="btn" id="dbBulkCsvBtn" onclick="exportBasketIntensityCsv()" disabled title="Export the basket's intensities to a wide CSV: col 1 = shared x axis (ALBA q, or 2θ), col 2+ = each file's intensity. All files must be the same detector type (SAXS or WAXS), same row count, same x grid.">Export CSV</button>
             <button class="btn" onclick="autoTagAlbaScans({toast:true})" title="Tag ALBA frames by scan name: iso_1, ramp_up_2, … (both detectors share the tag)">Auto-tag: scan name</button>
+            <button class="btn" onclick="autoTagAlbaDetector({toast:true})" title="Tag ALBA frames already in the DB by detector: WAXS (Rayonix) / SAXS (Pilatus)">Auto-tag: WAXS/SAXS</button>
             <button class="btn" onclick="backfillFolderPaths()" title="Fill folder/path from each file's header (# --> …) so old records become filterable by path">Fill paths</button>
           </div>
         </div>
@@ -365,6 +366,15 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
           <input type="number" id="dbFilterTempMax" placeholder="T≤" step="1" oninput="applyDbFileFilter()" title="Maximum temperature (°C)">
           <select id="dbFilterInstrument" onchange="applyDbFileFilter()" title="Filter by instrument"><option value="">Instrument: all</option></select>
           <select id="dbFilterSite" onchange="applyDbFileFilter()" title="Filter by measurement site"><option value="">Site: all</option></select>
+          <select id="dbFilterRating" onchange="applyDbFileFilter()" title="Filter by star rating">
+            <option value="">★: all</option>
+            <option value="5">★5</option>
+            <option value="4">★4+</option>
+            <option value="3">★3+</option>
+            <option value="2">★2+</option>
+            <option value="1">★1+</option>
+            <option value="0">Unrated</option>
+          </select>
           <select id="dbFilterSort" onchange="applyDbFileFilter()" title="Sort">
             <option value="name-asc">Name ↑</option>
             <option value="name-desc">Name ↓</option>
@@ -376,6 +386,8 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <option value="upload-desc">Upload ↓</option>
             <option value="edit-asc">Edit ↑</option>
             <option value="edit-desc">Edit ↓</option>
+            <option value="rating-asc">Rating ↑</option>
+            <option value="rating-desc">Rating ↓</option>
           </select>
           <label style="font-size:9px;color:var(--text3);display:flex;align-items:center;gap:2px;white-space:nowrap" title="Filter by DB upload date">Up:<input type="date" id="dbFilterUploadFrom" onchange="applyDbFileFilter()" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text)"><span>–</span><input type="date" id="dbFilterUploadTo" onchange="applyDbFileFilter()" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text)"></label>
           <label style="font-size:9px;color:var(--text3);display:flex;align-items:center;gap:2px;white-space:nowrap" title="Filter by DB edit date">Ed:<input type="date" id="dbFilterEditFrom" onchange="applyDbFileFilter()" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text)"><span>–</span><input type="date" id="dbFilterEditTo" onchange="applyDbFileFilter()" style="font-size:10px;padding:1px 3px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text)"></label>
@@ -519,7 +531,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <span id="basketThinHint" style="font-size:10px;color:var(--text3);white-space:nowrap"></span>
             </div>
             <div id="combineSamplePicker" style="max-height:min(200px,26vh);overflow:auto;border:1px solid var(--border);border-radius:6px;padding:4px 6px;margin-bottom:6px;font-size:11px"></div>
-            <div class="title" style="margin-bottom:4px">Trace settings</div>
+            <div class="title" style="margin-bottom:4px;display:flex;align-items:center;gap:6px">Trace settings<button type="button" id="combineOrderResetBtn" class="btn" style="padding:1px 6px;font-size:9px" onclick="setCombineNaturalOrder()" title="Order follows file-name (basket) order automatically and is unaffected by 'show N'. After a manual drag/↑↓ it stays hand-arranged — click to revert to basket order.">↕ Natural order</button></div>
             <div class="avg-pattern-row" id="avgPatternUi"></div>
             <div class="seg-list" id="outerSegList"></div>
           </div>
@@ -774,6 +786,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
     <div style="font-size:10px;color:var(--text3);margin-bottom:.55rem">Only ticked fields are applied to every selected file. Untouched fields are left as-is.</div>
     <div class="bulk-field"><input type="checkbox" id="bulkSetSampleLabel"><span>Sample label</span><input class="txt" id="bulkSampleLabel" placeholder="e.g. PPP_batch3" oninput="document.getElementById('bulkSetSampleLabel').checked=true;updateBulkDatasetPreview()"></div>
     <div class="bulk-field"><input type="checkbox" id="bulkSetTags"><span>Tags</span><select class="txt-sm" id="bulkTagsMode" style="flex:0 0 auto" onchange="document.getElementById('bulkSetTags').checked=true"><option value="replace">Replace</option><option value="add">Add</option><option value="remove">Remove</option></select><input class="txt" id="bulkTags" placeholder="e.g. LN2,batchA" oninput="document.getElementById('bulkSetTags').checked=true"></div>
+    <div class="bulk-field"><input type="checkbox" id="bulkSetRating"><span>Rating</span><select class="txt-sm" id="bulkRating" onchange="document.getElementById('bulkSetRating').checked=true"><option value="0">Clear (unrated)</option><option value="1">★1</option><option value="2">★2</option><option value="3">★3</option><option value="4">★4</option><option value="5">★5</option></select></div>
     <div class="bulk-field"><input type="checkbox" id="bulkSetInstrument"><span>Instrument</span><input class="txt" id="bulkInstrument" list="instrumentPresetList" placeholder="e.g. Rigaku SmartLab" oninput="document.getElementById('bulkSetInstrument').checked=true"></div>
     <div class="bulk-field"><input type="checkbox" id="bulkSetSite"><span>Site</span><input class="txt" id="bulkSite" list="sitePresetList" placeholder="e.g. UB CCiTUB" oninput="document.getElementById('bulkSetSite').checked=true"></div>
     <div class="bulk-field"><input type="checkbox" id="bulkSetCap"><span>Capillary mm</span><input class="txt" id="bulkCap" type="number" step="0.001" placeholder="0.300" oninput="document.getElementById('bulkSetCap').checked=true"></div>
@@ -1030,6 +1043,7 @@ const LEGEND_FORMAT_OPTIONS=[
   {id:'instrument',label:'Instrument'},
   {id:'site',label:'Site'},
   {id:'tags',label:'Tags'},
+  {id:'folder',label:'Folder / path'},
   {id:'filename',label:'Filename'},
   {id:'dataset',label:'Dataset name'}
 ];
@@ -1049,7 +1063,7 @@ let albaExpEnvMap={};
    Keyed by DETECTOR-STRIPPED frame index (e.g. "iso_-51_000_0000") so a sibling
    detector shares one acquisition time. Populated per drop from File.lastModified. */
 let albaFrameTimeMap={};
-let dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',instrument:'',site:'',dateFrom:'',dateTo:'',sort:'name-asc'};
+let dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',instrument:'',site:'',rating:'',dateFrom:'',dateTo:'',sort:'name-asc'};
 /* Instrument / site live on the DB file record.
    Instrument is auto-filled at import from the parsed file (.ras → Rigaku SmartLab,
    HDF5 → NeXus instrument/name); site has no in-file source and is entered by hand.
@@ -1059,7 +1073,7 @@ const INSTRUMENT_PRESETS=['Rigaku SmartLab','Anton Paar','ALBA Rayonix (WAXD)','
 const SITE_PRESETS=['FU','UB CCiTUB','ALBA'];
 const INSTRUMENT_ALIASES=[[/rigaku|smart\s*lab/i,'Rigaku SmartLab'],[/anton\s*paar|xrdynamic/i,'Anton Paar']];
 const DB_FILTER_NONE='__unset__';   // sentinel: "only files with this field unset"
-const DB_TREE_FIELDS=['sample','folder','measStartDate','measStart','temp','instrument','site','filename','dataset','tags','capillary','measEnd','measTime','date'];
+const DB_TREE_FIELDS=['sample','folder','measStartDate','measStart','temp','instrument','site','filename','dataset','tags','rating','capillary','measEnd','measTime','date'];
 let dbTreeOrder=['sample','measStart','temp'];
 /* One level per available field: past that a level can only repeat a field already
    used, which splits nothing further. */
@@ -1391,6 +1405,25 @@ function extractSourceFolder(text){
   const cut=dir.match(/\/PROCESSED\/(.+)$/i)||dir.match(/\/RAW\/(.+)$/i)||dir.match(/\/DATA\/(.+)$/i);
   const rel=cut?cut[1]:dir.split('/').filter(Boolean).slice(-4).join('/');
   return normalizeFolderPath(rel);
+}
+/** Combine the .dat header's acquisition folder with the folder actually dropped.
+    The header records the ORIGINAL scan folder (e.g. "KEI/C8TAG/2/LaVue1D"); a local
+    re-integration lives in a renamed copy ("…/2_waxs_reintegratd/LaVue1D"). Aligning the
+    two from the leaf and preferring the LOCAL segment wherever they differ keeps the
+    header's fuller prefix while surfacing the re-integration folder name, e.g.
+      header "KEI/C8TAG/2/LaVue1D" + drop "2_waxs_reintegratd/LaVue1D"
+        → "KEI/C8TAG/2_waxs_reintegratd/LaVue1D".
+    When only one side is present it is returned unchanged (same as header||drop). */
+function mergeFolderPaths(headerPath,dropPath){
+  const H=normalizeFolderPath(headerPath).split('/').filter(Boolean);
+  const D=normalizeFolderPath(dropPath).split('/').filter(Boolean);
+  if(!D.length)return normalizeFolderPath(headerPath);
+  if(!H.length)return normalizeFolderPath(dropPath);
+  let i=H.length-1,j=D.length-1;
+  const tail=[];
+  while(j>=0){tail.push(D[j]);j--;if(i>=0)i--;}   // overlay D onto H's tail; the local (D) segment wins
+  const prefix=i>=0?H.slice(0,i+1):[];
+  return normalizeFolderPath(prefix.concat(tail.reverse()).join('/'));
 }
 /** Group DB rows by folderPath; sort folders path-wise then items by name. */
 function groupDbRecordsByFolder(records,folderKey='folderPath'){
@@ -1821,6 +1854,7 @@ function reorderCombineTrace(fromIdx,toIdx){
   if(!(fromIdx>=0&&toIdx>=0&&fromIdx<n&&toIdx<n)||fromIdx===toIdx)return;
   const it=cmb.traces.splice(fromIdx,1)[0];
   cmb.traces.splice(toIdx,0,it);
+  cmb.manualOrder=true;   // hand-arranged from here; "↕ Natural order" reverts
   renderOuterSegmentList();
   redrawOuterChart();
 }
@@ -2437,6 +2471,15 @@ function albaDetectorTypeTag(p,fname){
   return from(p.meta.detector)||from(p.meta.instrument)||from(fname)||null;
 }
 
+/** Detector-type tag for an already-stored record (or loaded sample). Same
+    WAXS/SAXS judgement as albaDetectorTypeTag but from persisted fields: the
+    instrument string ("ALBA Rayonix (WAXD)") first, then the frame filename
+    (pilatus_/rayonix_). Returns null for non-ALBA files. */
+function albaRecordTypeTag(name,instrument){
+  const from=s=>{const t=_albaTypeFromStr(String(s||''));return t==='waxs'?'WAXS':(t==='saxs'?'SAXS':null);};
+  return from(instrument)||from(name)||null;
+}
+
 /** Detector-stripped frame index key, e.g. "pilatus_iso_-51_000_0000" → "iso_-51_000_0000". */
 function albaFrameKey(name){return albaBaseName(name).replace(/^(pilatus|rayonix)_/i,'');}
 
@@ -2529,6 +2572,33 @@ async function autoTagAlbaScans(opts){
   dbFiles=(await adapter.listFiles().catch(()=>dbFiles))||dbFiles;
   try{renderDbFileList();renderFirstBasket();renderAll();}catch(_e){}
   if(opts&&opts.toast)toast(`Auto-tag: ${n} file(s) tagged by scan name`);
+  return n;
+}
+
+/** Backfill the WAXS/SAXS detector tag onto ALBA frames already in the DB (and
+    loaded samples). Add-only and idempotent: a file that already carries its tag
+    is skipped, and the other detector's tag is never added. Complements the
+    import-time tagging for records saved before that existed. {toast:true} for
+    the manual button. */
+async function autoTagAlbaDetector(opts){
+  const recs=(await adapter.listFiles().catch(()=>dbFiles))||[];
+  let n=0;
+  for(const r of recs){
+    if(!r||r.id==null)continue;
+    const tag=albaRecordTypeTag(r.name,r.instrument);if(!tag)continue;
+    const cur=normalizeTags(r.tags);if(cur.includes(tag))continue;
+    try{await adapter.saveFile({...r,id:r.id,tags:[...cur,tag]});n++;}catch(_e){}
+  }
+  samples.forEach(s=>{
+    const nm=s.rawName||s.name;
+    const tag=albaRecordTypeTag(nm,s.meta&&s.meta.instrument);if(!tag)return;
+    s.meta=s.meta||{};
+    const cur=normalizeTags(s.meta.tags);
+    if(!cur.includes(tag))s.meta.tags=[...cur,tag];
+  });
+  dbFiles=(await adapter.listFiles().catch(()=>dbFiles))||dbFiles;
+  try{renderDbFileList();renderFirstBasket();renderAll();}catch(_e){}
+  if(opts&&opts.toast)toast(`Auto-tag: ${n} file(s) tagged WAXS/SAXS`);
   return n;
 }
 
@@ -3185,12 +3255,16 @@ function handleFiles(fileList){
       /* Original scan folder from the .dat header (# --> …) so files stay filterable/
          groupable by acquisition path even after the local filename loses that context. */
       const folderFromHeader=(typeof raw==='string')?extractSourceFolder(raw):'';
-      /* Dropping a whole folder gives every File a webkitRelativePath
-         ("scan_012/frame_0001.dat"). Keep its directory part when the file itself carries
-         no source folder — without it, two same-named frames from different folders have
-         nothing left to tell them apart in the DB list. */
-      const folderFromDrop=normalizeFolderPath(String(f.webkitRelativePath||'').replace(/[^/]*$/,''));
-      const folderForDb=folderFromHeader||folderFromDrop;
+      /* Dropping a whole folder gives every File a path relative to the dropped root —
+         either the native webkitRelativePath (folder <input>) or the _dropRelPath the
+         drag-drop traversal attaches ("2_waxs_reintegratd/LaVue1D/pilatus_0000.dat").
+         Keep its directory part so two same-named frames from different local folders
+         stay distinguishable, and so a re-integration folder name survives. */
+      const folderFromDrop=normalizeFolderPath(String(f.webkitRelativePath||f._dropRelPath||'').replace(/[^/]*$/,''));
+      /* Merge the header's original scan path with the local drop path: the header keeps
+         the fuller prefix, the local folder name (e.g. "…_reintegratd") wins where they
+         differ. Either source alone still works (mergeFolderPaths ≈ header||drop then). */
+      const folderForDb=mergeFolderPaths(folderFromHeader,folderFromDrop);
       /* Frame identity + integration parameters (pyFAI .dat only; '' elsewhere). */
       const isAlbaDat=!!(p.meta&&p.meta.albaQ)&&typeof raw==='string';
       const measurementKey=isAlbaDat?albaMeasurementKey(raw,f.name):'';
@@ -3497,6 +3571,7 @@ function xrdMetaRecordForSample(s){
     measurementTimeMin:Number.isFinite(s?.meta?.measurementTimeMin)?(+s.meta.measurementTimeMin):null,
     measurementStartIso:s?.timeStart instanceof Date?s.timeStart.toISOString():null,
     measurementEndIso:s?.timeEnd instanceof Date?s.timeEnd.toISOString():null,
+    folderPath:normalizeFolderPath(s?.meta?.folderPath||s?.folderPath||''),
     savedAt:null
   };
 }
@@ -3973,9 +4048,25 @@ function segmentsForSeries(seriesId){
 function selectedOuterSegments(){
   return tracesForCombine();
 }
+/** sampleUid → its index in the global display (basket) order. */
+function sampleDisplayIndexMap(){
+  const m=new Map();
+  samplesInDisplayOrder().forEach((s,i)=>m.set(s.sampleUid,i));
+  return m;
+}
+/** Keep a pattern's traces physically ordered by file-name (basket) order, so the draw
+    order and the trace list stay stable regardless of "show N" thinning. Skipped once the
+    user has reordered by hand (cmb.manualOrder) — setCombineNaturalOrder() clears that. */
+function sortCombineTracesNatural(cmb){
+  if(!cmb||!Array.isArray(cmb.traces)||cmb.manualOrder)return;
+  const order=sampleDisplayIndexMap();
+  const key=u=>order.has(u)?order.get(u):Infinity;
+  cmb.traces.sort((a,b)=>key(a.sampleUid)-key(b.sampleUid));
+}
 function tracesForCombine(){
   const cmb=getActiveCombine();
   if(!cmb||!Array.isArray(cmb.traces))return[];
+  sortCombineTracesNatural(cmb);   // basket order by default; N-thinning never reshuffles
   const out=[];
   cmb.traces.forEach((t,ti)=>{
     const s=samples.find(x=>x.sampleUid===t.sampleUid);
@@ -4331,6 +4422,8 @@ function renderOuterSegmentList(){
   const cmb=getActiveCombine();
   if(!cmb){el.innerHTML='<div class="empty">Create a Combine first (+ New)</div>';return;}
   const all=tracesForCombine();
+  const orderBtn=document.getElementById('combineOrderResetBtn');
+  if(orderBtn){orderBtn.classList.toggle('active',!!cmb.manualOrder);orderBtn.textContent=cmb.manualOrder?'↕ Manual — reset':'↕ Natural order';}
   if(!all.length){el.innerHTML='<div class="empty">Select samples from the list above</div>';return;}
   const _sc=captureRowScroll(el);
   el.innerHTML=all.map(({s,seg,ti})=>{
@@ -4777,8 +4870,19 @@ function moveCombineTrace(ti,dir){
   const tmp=cmb.traces[ti];
   cmb.traces[ti]=cmb.traces[ni];
   cmb.traces[ni]=tmp;
+  cmb.manualOrder=true;   // hand-arranged from here; "↕ Natural order" reverts
   renderOuterSegmentList();
   redrawOuterChart();
+}
+/** Revert this pattern to file-name (basket) order; thinning-stable again afterwards. */
+function setCombineNaturalOrder(){
+  const cmb=getActiveCombine();
+  if(!cmb)return;
+  cmb.manualOrder=false;
+  sortCombineTracesNatural(cmb);
+  renderOuterSegmentList();
+  redrawOuterChart();
+  toast('Trace order reset to file-name (basket) order');
 }
 function setSegXoff(si,gi,v){const n=parseFloat(v);samples[si].segments[gi].xOffset=isNaN(n)?0:n;redrawOuterChart();redrawThermal();}
 function setSegYoff(si,gi,v){const n=parseFloat(v);samples[si].segments[gi].yOffset=isNaN(n)?0:n;redrawOuterChart();redrawThermal();}
@@ -4949,6 +5053,7 @@ function hydrateProject(payload,{replace=true}={}){
     id:c.id||newSampleUid(),
     name:c.name||'Pattern',
     parentId:c.parentId||null,
+    manualOrder:!!c.manualOrder,
     chartSettings:(c.chartSettings&&typeof c.chartSettings==='object')?{...c.chartSettings}:null,
     traces:Array.isArray(c.traces)?c.traces.map(t=>({
       sampleUid:t.sampleUid||'',
@@ -5108,6 +5213,33 @@ function dbFileInstrument(f){
 function dbFileSite(f){
   return(f&&f.site!=null)?String(f.site).trim():'';
 }
+/* ---- 5-star quality rating for DB file records (1..5; absent = unrated).
+   Reuses the .feat-qual/.qstar widget styling from the feature DB. ---- */
+const DB_RATING_LABELS={1:'Poor',2:'Fair',3:'OK',4:'Good',5:'Excellent'};
+function dbRatingTitle(v){return v===0?'Unrated':`${v}: ${DB_RATING_LABELS[v]||''}`;}
+function dbFileRating(f){const v=f&&f.rating;return Number.isFinite(v)&&v>=1&&v<=5?Math.round(v):0;}
+/** One 5-star widget for a DB file id. Clicking a star sets that level; clicking
+    the current level clears it. Used in the basket rows and the DB file list. */
+function dbRatingStarsHtml(id,cur){
+  const c=Number.isFinite(cur)?cur:0;
+  const stars=[1,2,3,4,5].map(n=>`<span class="qstar${c>=n?' on':''}" onclick="event.stopPropagation();setDbFileRating(${id},${n})" title="${dbRatingTitle(n)}">★</span>`).join('');
+  return `<span class="feat-qual" title="Rating — click a star to set, click the same star to clear">${stars}</span>`;
+}
+async function setDbFileRating(id,n){
+  id=Number(id);
+  let rec;try{rec=await adapter.getFile(id);}catch(e){console.error(e);return;}
+  if(!rec)return;
+  const cur=dbFileRating(rec);
+  const next=(cur===n)?0:n;                 // click the lit star again to clear
+  const patch={...rec,id};
+  if(next)patch.rating=next;else delete patch.rating;
+  patch.editedAt=new Date().toISOString();
+  try{await adapter.saveFile(patch);}catch(e){console.error(e);toast('Rating save failed: '+(e.message||e));return;}
+  const loaded=samples.find(s=>s.dbId===id);
+  if(loaded){loaded.meta=loaded.meta||{};if(next)loaded.meta.rating=next;else delete loaded.meta.rating;}
+  dbFiles=await adapter.listFiles().catch(()=>dbFiles);
+  renderDbFileList();renderFirstBasket();
+}
 /** Distinct non-empty values of an instrument/site field across every cached file. */
 function knownDbValues(field){
   const get=field==='site'?dbFileSite:dbFileInstrument;
@@ -5151,6 +5283,7 @@ function legendPartValue(s,partId){
   if(partId==='instrument')return dbFileInstrument(meta)||'';
   if(partId==='site')return dbFileSite(meta)||'';
   if(partId==='tags'){const t=dbFileTags(meta);return (t&&t.length)?t.join(', '):'';}
+  if(partId==='folder')return dbFileFolderPath(meta)||'';
   if(partId==='filename'){
     if(s.rawName!=null&&String(s.rawName).trim())return String(s.rawName).trim();
     return s.name!=null?String(s.name).trim():'';
@@ -5272,6 +5405,7 @@ function dbTreeLabel(field,f){
   if(field==='filename')return f?.name||'(no name)';
   if(field==='dataset')return dbFileDatasetName(f)||'(no name)';
   if(field==='tags'){const t=dbFileTags(f);return (t&&t.length)?t.join(', '):'Untagged';}
+  if(field==='rating'){const r=dbFileRating(f);return r?'★'.repeat(r)+` (${r})`:'Unrated';}
   if(field==='measStartDate'){const iso=dbFileMeasurementStartIso(f);if(!iso)return 'Unknown date';const d=new Date(iso);return isNaN(d.getTime())?'Unknown date':d.toLocaleDateString();}
   return'Unknown';
 }
@@ -5289,10 +5423,11 @@ function dbTreeSortValue(field,f){
   if(field==='filename')return (f?.name||'').toLowerCase();
   if(field==='dataset')return dbFileDatasetName(f).toLowerCase();
   if(field==='tags'){const t=dbFileTags(f);return (t&&t.length)?t.join(',').toLowerCase():'~~~';}
+  if(field==='rating'){const r=dbFileRating(f);return r?-r:1;}   // higher rating first; unrated last
   if(field==='measStartDate'){const iso=dbFileMeasurementStartIso(f);if(!iso)return Infinity;const d=new Date(iso);return isNaN(d.getTime())?Infinity:new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();}
   return '';
 }
-const DB_TREE_LABELS={sample:'Sample',folder:'Folder / path',measStartDate:'Meas. start date',measStart:'Meas. start',temp:'Temperature',instrument:'Instrument',site:'Site',filename:'Filename',dataset:'Dataset name',tags:'Tags',capillary:'Capillary',measEnd:'Meas. end',measTime:'Meas. time',date:'Date'};
+const DB_TREE_LABELS={sample:'Sample',folder:'Folder / path',measStartDate:'Meas. start date',measStart:'Meas. start',temp:'Temperature',instrument:'Instrument',site:'Site',filename:'Filename',dataset:'Dataset name',tags:'Tags',rating:'Rating',capillary:'Capillary',measEnd:'Meas. end',measTime:'Meas. time',date:'Date'};
 /** Render one <select> per active grouping level (default 3; add/remove up to DB_TREE_MAX_LEVELS). */
 function initDbTreeOrderUi(){
   const host=document.getElementById('dbTreeLevels');
@@ -5405,6 +5540,7 @@ function renderDbFileItem(f){
         <span>Inst: ${esc(inst)}</span>
         <span>Site: ${esc(st)}</span>
         <span>Tags: ${esc(tagStr)}</span>
+        <span title="Rating">${dbRatingStarsHtml(fid,dbFileRating(f))}</span>
         ${date?`<span>${date}</span>`:''}
         ${uploadedAtLabel?`<span title="DB upload: ${uploadedAtLabel}">↑${new Date(f.uploadedAt).toLocaleDateString()}</span>`:''}
         ${editedAtLabel?`<span title="Last edit: ${editedAtLabel}" style="color:var(--text3)">✎${new Date(f.editedAt).toLocaleDateString()}</span>`:''}
@@ -5425,23 +5561,24 @@ function applyDbFileFilter(){
   const tMax=parseFloat(document.getElementById('dbFilterTempMax')?.value);
   const instrument=document.getElementById('dbFilterInstrument')?.value||'';
   const site=document.getElementById('dbFilterSite')?.value||'';
+  const rating=document.getElementById('dbFilterRating')?.value||'';
   const sort=document.getElementById('dbFilterSort')?.value||'name-asc';
   const uploadFrom=document.getElementById('dbFilterUploadFrom')?.value||'';
   const uploadTo=document.getElementById('dbFilterUploadTo')?.value||'';
   const editFrom=document.getElementById('dbFilterEditFrom')?.value||'';
   const editTo=document.getElementById('dbFilterEditTo')?.value||'';
   const showSuperseded=!!document.getElementById('dbFilterShowSuperseded')?.checked;
-  dbFileFilter={text:t,tags,tempMin:isFinite(tMin)?tMin:'',tempMax:isFinite(tMax)?tMax:'',instrument,site,uploadFrom,uploadTo,editFrom,editTo,sort,showSuperseded};
+  dbFileFilter={text:t,tags,tempMin:isFinite(tMin)?tMin:'',tempMax:isFinite(tMax)?tMax:'',instrument,site,rating,uploadFrom,uploadTo,editFrom,editTo,sort,showSuperseded};
   renderDbFileList();
 }
 function clearDbFileFilter(){
   const ids=['dbFilterText','dbFilterTags','dbFilterTempMin','dbFilterTempMax'];
   ids.forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  ['dbFilterInstrument','dbFilterSite'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['dbFilterInstrument','dbFilterSite','dbFilterRating'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   ['dbFilterUploadFrom','dbFilterUploadTo','dbFilterEditFrom','dbFilterEditTo'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sel=document.getElementById('dbFilterSort');if(sel)sel.value='name-asc';
   const sup=document.getElementById('dbFilterShowSuperseded');if(sup)sup.checked=false;
-  dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',instrument:'',site:'',uploadFrom:'',uploadTo:'',editFrom:'',editTo:'',sort:'name-asc',showSuperseded:false};
+  dbFileFilter={text:'',tags:[],tempMin:'',tempMax:'',instrument:'',site:'',rating:'',uploadFrom:'',uploadTo:'',editFrom:'',editTo:'',sort:'name-asc',showSuperseded:false};
   renderDbFileList();
 }
 /** Rebuild the instrument/site pickers (filter selects + meta-edit datalists) from
@@ -5497,8 +5634,15 @@ function groupBasketState(ids) {
 
 /* Files passing the current DB filter row. Mirrors the predicate inside
    renderDbFileList — keep the two in sync if the filter fields change. */
+/** True when a record satisfies the current rating filter value ('' = all,
+    '0' = unrated only, '1'..'5' = at least that many stars). */
+function dbFileRatingPasses(f,rating){
+  if(rating==null||rating==='')return true;
+  const rv=dbFileRating(f);
+  return rating==='0'?rv===0:rv>=Number(rating);
+}
 function dbFileMatchesFilter(f){
-  const {text,tags,tempMin,tempMax,instrument,site,uploadFrom,uploadTo,editFrom,editTo}=dbFileFilter;
+  const {text,tags,tempMin,tempMax,instrument,site,rating,uploadFrom,uploadTo,editFrom,editTo}=dbFileFilter;
   /* Superseded rows are hidden, not deleted — the newer integration of the same frame
      stands in for them until the user ticks "Superseded". */
   if(!dbFileFilter.showSuperseded&&f&&f.supersededBy!=null)return false;
@@ -5519,6 +5663,7 @@ function dbFileMatchesFilter(f){
   if(tempMax!==''){const T=dbFileTempC(f);if(!Number.isFinite(T)||T>tempMax)return false;}
   if(instrument){const v=dbFileInstrument(f);if(instrument===DB_FILTER_NONE?v!=='':v!==instrument)return false;}
   if(site){const v=dbFileSite(f);if(site===DB_FILTER_NONE?v!=='':v!==site)return false;}
+  if(!dbFileRatingPasses(f,rating))return false;
   if(uploadFrom){const d=(f.uploadedAt||'').slice(0,10);if(!d||d<uploadFrom)return false;}
   if(uploadTo){const d=(f.uploadedAt||'').slice(0,10);if(!d||d>uploadTo)return false;}
   if(editFrom){const d=(f.editedAt||'').slice(0,10);if(!d||d<editFrom)return false;}
@@ -5599,7 +5744,7 @@ function renderDbFileList(){
   if(!fl)return;
   refreshInstrumentSiteOptions();
   if(!dbFiles.length){fl.innerHTML='<div class="empty">No files in cache</div>';return;}
-  const {text,tags,tempMin,tempMax,instrument,site,uploadFrom,uploadTo,editFrom,editTo,sort}=dbFileFilter;
+  const {text,tags,tempMin,tempMax,instrument,site,rating,uploadFrom,uploadTo,editFrom,editTo,sort}=dbFileFilter;
   let filtered=dbFiles.filter(f=>{
     if(!dbFileFilter.showSuperseded&&f&&f.supersededBy!=null)return false;
     if(text){
@@ -5620,6 +5765,7 @@ function renderDbFileList(){
     if(tempMax!==''){const T=dbFileTempC(f);if(!Number.isFinite(T)||T>tempMax)return false;}
     if(instrument){const v=dbFileInstrument(f);if(instrument===DB_FILTER_NONE?v!=='':v!==instrument)return false;}
     if(site){const v=dbFileSite(f);if(site===DB_FILTER_NONE?v!=='':v!==site)return false;}
+    if(!dbFileRatingPasses(f,rating))return false;
     if(uploadFrom){const d=(f.uploadedAt||'').slice(0,10);if(!d||d<uploadFrom)return false;}
     if(uploadTo){const d=(f.uploadedAt||'').slice(0,10);if(!d||d>uploadTo)return false;}
     if(editFrom){const d=(f.editedAt||'').slice(0,10);if(!d||d<editFrom)return false;}
@@ -5648,6 +5794,10 @@ function renderDbFileList(){
     if(sort==='edit-asc'||sort==='edit-desc'){
       const da=new Date(a.editedAt||0).getTime(),db2=new Date(b.editedAt||0).getTime();
       return sort==='edit-desc'?db2-da:da-db2;
+    }
+    if(sort==='rating-asc'||sort==='rating-desc'){
+      const ra=dbFileRating(a),rb=dbFileRating(b);
+      return sort==='rating-desc'?rb-ra:ra-rb;
     }
     return 0;
   });
@@ -5849,6 +5999,7 @@ function applyDbRecordMeta(p,rec){
   p.meta=p.meta||{};
   if(rec.sampleLabel!=null&&String(rec.sampleLabel).trim())p.meta.sampleLabel=String(rec.sampleLabel).trim();
   if(Array.isArray(rec.tags))p.meta.tags=[...rec.tags];
+  {const rv=dbFileRating(rec);if(rv)p.meta.rating=rv;else delete p.meta.rating;}
   if(rec.instrument!=null)p.meta.instrument=String(rec.instrument).trim();
   if(rec.site!=null)p.meta.site=String(rec.site).trim();
   if(Number.isFinite(+rec.lambdaA)&&+rec.lambdaA>0)p.meta.lambda=+rec.lambdaA;
@@ -6100,6 +6251,7 @@ function renderFirstBasket(){
       <input type="checkbox" ${excluded?'':'checked'} onchange="toggleBasketInclude(${id},this.checked)" title="Include in parent plot">
       <span class="fb-name" title="${esc(name)}">${esc(name)}</span>
       <span class="fb-meta">${esc(temp)}</span>
+      ${r?dbRatingStarsHtml(id,dbFileRating(r)):''}
       <button type="button" class="btn warn" style="padding:0 5px;font-size:10px" onclick="removeFromBasket(${id})" title="Remove from basket">x</button>
     </div>`;
   }).join('');
@@ -6594,9 +6746,10 @@ function openDbBulkEditModal(){
   if(!firstBasket.length){toast('Basket is empty — add files to the basket first');return;}
   bulkEditTargetIds=null;
   document.getElementById('dbBulkEditLabel').textContent=`${firstBasket.length} file(s) in basket`;
-  ['bulkSetSampleLabel','bulkSetTags','bulkSetInstrument','bulkSetSite','bulkSetCap','bulkSetMeasTime','bulkSetMeasStart','bulkSetMeasEnd','bulkSetTemp','bulkSetDatasetName'].forEach(id=>{const el=document.getElementById(id);if(el)el.checked=false;});
+  ['bulkSetSampleLabel','bulkSetTags','bulkSetRating','bulkSetInstrument','bulkSetSite','bulkSetCap','bulkSetMeasTime','bulkSetMeasStart','bulkSetMeasEnd','bulkSetTemp','bulkSetDatasetName'].forEach(id=>{const el=document.getElementById(id);if(el)el.checked=false;});
   ['bulkSampleLabel','bulkTags','bulkInstrument','bulkSite','bulkCap','bulkMeasTime','bulkMeasStart','bulkMeasEnd','bulkTemp'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const tm=document.getElementById('bulkTagsMode');if(tm)tm.value='replace';
+  const rm=document.getElementById('bulkRating');if(rm)rm.value='0';
   refreshInstrumentSiteOptions();
   bulkDatasetPreviewRec=(dbFiles||[]).find(f=>f&&f.id===firstBasket[0])||null;
   updateBulkDatasetPreview();
@@ -6610,11 +6763,12 @@ function openPostUploadBulkEdit(newIds, records){
   bulkEditTargetIds=[...newIds];
   const n=newIds.length;
   /* Reset checkboxes */
-  ['bulkSetSampleLabel','bulkSetTags','bulkSetInstrument','bulkSetSite','bulkSetCap','bulkSetMeasTime','bulkSetMeasStart','bulkSetMeasEnd','bulkSetTemp','bulkSetDatasetName']
+  ['bulkSetSampleLabel','bulkSetTags','bulkSetRating','bulkSetInstrument','bulkSetSite','bulkSetCap','bulkSetMeasTime','bulkSetMeasStart','bulkSetMeasEnd','bulkSetTemp','bulkSetDatasetName']
     .forEach(id=>{const el=document.getElementById(id);if(el)el.checked=false;});
   ['bulkSampleLabel','bulkTags','bulkCap','bulkMeasTime','bulkMeasStart','bulkMeasEnd','bulkTemp']
     .forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const tm=document.getElementById('bulkTagsMode');if(tm)tm.value='replace';
+  const rm=document.getElementById('bulkRating');if(rm)rm.value='0';
   refreshInstrumentSiteOptions();
   /* Pre-fill fields that are identical across ALL new files */
   const commonInstrument=[...new Set(records.map(r=>(r.instrument||'')).filter(Boolean))];
@@ -6712,6 +6866,7 @@ async function confirmDbBulkEdit(){
   if(!ids.length){closeDbBulkEditModal();return;}
   const setLabel=document.getElementById('bulkSetSampleLabel').checked;
   const setTags=document.getElementById('bulkSetTags').checked;
+  const setRating=document.getElementById('bulkSetRating').checked;
   const setInst=document.getElementById('bulkSetInstrument').checked;
   const setSite=document.getElementById('bulkSetSite').checked;
   const setCap=document.getElementById('bulkSetCap').checked;
@@ -6720,10 +6875,11 @@ async function confirmDbBulkEdit(){
   const setMe=document.getElementById('bulkSetMeasEnd').checked;
   const setT=document.getElementById('bulkSetTemp').checked;
   const setDs=document.getElementById('bulkSetDatasetName').checked;
-  if(!(setLabel||setTags||setInst||setSite||setCap||setMt||setMs||setMe||setT||setDs)){toast('Tick at least one field to apply');return;}
+  if(!(setLabel||setTags||setRating||setInst||setSite||setCap||setMt||setMs||setMe||setT||setDs)){toast('Tick at least one field to apply');return;}
   const sampleLabel=document.getElementById('bulkSampleLabel').value.trim();
   const tagsMode=document.getElementById('bulkTagsMode').value;
   const tagsInput=normalizeTags(document.getElementById('bulkTags').value);
+  const ratingVal=parseInt(document.getElementById('bulkRating').value,10);
   const instrument=normalizeInstrument(document.getElementById('bulkInstrument').value);
   const site=normalizeSite(document.getElementById('bulkSite').value);
   const capVal=document.getElementById('bulkCap').value;
@@ -6749,6 +6905,7 @@ async function confirmDbBulkEdit(){
         else if(tagsMode==='remove')patch.tags=cur.filter(t=>!tagsInput.includes(t));
         else patch.tags=tagsInput;
       }
+      if(setRating){if(ratingVal>=1&&ratingVal<=5)patch.rating=ratingVal;else delete patch.rating;}
       if(setInst)patch.instrument=instrument;
       if(setSite)patch.site=site;
       if(setCap)patch.capillarySize=Number.isFinite(capillarySize)?capillarySize:null;
@@ -7107,6 +7264,36 @@ function interpretationDedupKey(r){
   return [r.linked_feature_id||'',r.timestamp||'',r.author||'',String(r.content||'').trim()].join('|');
 }
 
+/** Expand a drop's DataTransfer into a flat File[] while preserving each file's path
+    relative to the dropped folder (Chrome/Safari webkitGetAsEntry). Every file gets a
+    _dropRelPath expando ("2_waxs_reintegratd/LaVue1D/pilatus_0000.dat"); handleFiles reads
+    it as a fallback for webkitRelativePath. Falls back to the flat file list when the
+    directory API is unavailable (older browsers, or a plain multi-file drop). */
+async function expandDropFiles(dt){
+  const flat=dt&&dt.files?[...dt.files]:[];
+  const items=dt&&dt.items?[...dt.items]:[];
+  const canEntry=items.length&&typeof items[0].webkitGetAsEntry==='function';
+  if(!canEntry)return flat;
+  const entries=items.map(it=>{try{return it.webkitGetAsEntry();}catch(_){return null;}}).filter(Boolean);
+  if(!entries.length)return flat;
+  const out=[];
+  const walk=(entry,prefix)=>new Promise(res=>{
+    if(!entry){res();return;}
+    if(entry.isFile){
+      entry.file(f=>{try{f._dropRelPath=prefix+entry.name;}catch(_){}out.push(f);res();},()=>res());
+    }else if(entry.isDirectory){
+      const reader=entry.createReader();
+      const collected=[];
+      const readMore=()=>reader.readEntries(batch=>{     // readEntries yields ≤100 per call
+        if(!batch||!batch.length){Promise.all(collected.map(c=>walk(c,prefix+entry.name+'/'))).then(res);return;}
+        collected.push(...batch);readMore();
+      },()=>res());
+      readMore();
+    }else res();
+  });
+  await Promise.all(entries.map(e=>walk(e,'')));
+  return out.length?out:flat;
+}
 function initFileDrop(){
   const dz=document.getElementById('dropZone');
   let dragDepth=0;
@@ -7122,11 +7309,11 @@ function initFileDrop(){
     dragDepth=Math.max(0,dragDepth-1);
     if(dragDepth===0)highlight(false);
   };
-  const onDrop=e=>{
+  const onDrop=async e=>{
     e.preventDefault();e.stopPropagation();
     dragDepth=0;
     highlight(false);
-    const files=e.dataTransfer?.files;
+    const files=await expandDropFiles(e.dataTransfer);
     if(files&&files.length)handleFiles(files);
   };
   [dz,document.body].filter(Boolean).forEach(el=>{
@@ -7136,11 +7323,11 @@ function initFileDrop(){
     el.addEventListener('drop',onDrop);
   });
   window.addEventListener('dragover',e=>{e.preventDefault();});
-  window.addEventListener('drop',e=>{
+  window.addEventListener('drop',async e=>{
     e.preventDefault();
     dragDepth=0;
     highlight(false);
-    const files=e.dataTransfer?.files;
+    const files=await expandDropFiles(e.dataTransfer);
     if(files&&files.length)handleFiles(files);
   });
   if(dz)dz.addEventListener('click',()=>document.getElementById('fileIn')?.click());
