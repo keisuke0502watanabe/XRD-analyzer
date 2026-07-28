@@ -3343,8 +3343,11 @@ function finishRasBatch(pendingRef){
   try{renderAll();}catch(e){console.error(e);toast('UI update: '+(e.message||e));}
   void refreshDbPanels().then(async()=>{
     /* When .dat and ExpEnv were dropped in the same batch, re-stamp once everything is saved
-       so late-parsed patterns still pick up their temperature regardless of read order. */
-    if(Object.keys(albaExpEnvMap).length)await applyAlbaExpEnv(null);
+       so late-parsed patterns still pick up their temperature regardless of read order.
+       Skipped for a folder-scoped drop: that batch already stamped its own frames from the
+       drop's ExpEnv, and re-running the GLOBAL map here could overwrite them with another
+       scan's identically-named frame. */
+    if(!pendingRef.skipGlobalExpEnv&&Object.keys(albaExpEnvMap).length)await applyAlbaExpEnv(null);
     /* Backfill mtime dates onto records that predate the frame-time feature (a re-drop
        reaches this even though the .dat itself was skipped as a duplicate). */
     const nT=await applyAlbaFrameTimes();
@@ -3357,16 +3360,27 @@ function finishRasBatch(pendingRef){
 
 function handleFiles(fileList){
   const all=[...fileList];
+  const ACCEPTED=/\.(ras|scn|xrdml|hdf5|h5|dat)$/i;
+  const list=all.filter(f=>ACCEPTED.test(f.name)).sort((a,b)=>naturalCompare({name:a.name},{name:b.name}));
+  const datInDrop=list.filter(f=>/\.dat$/i.test(f.name));
   /* ALBA ExpEnv logs carry no pattern — parse them for temperature/time and stamp the
      matching .dat frames, but do not create a sample or a cached data record. */
   const expEnv=all.filter(f=>/\.alba$|_header\.txt$/i.test(f.name));
-  if(expEnv.length){
+  /* ExpEnv for THIS drop: when the scan's .dat are dropped alongside the .alba, time/temp
+     is applied ONLY to those frames (folder-scoped, see the pool below) so that another
+     scan's identically-named frame (every ALBA scan starts at _0000) is never touched.
+     Populated inside the pool; stays empty in the loose-file fallback. */
+  let dropExpEnv={};
+  /* Loose ExpEnv drop (no .dat in this batch): fall back to a best-effort GLOBAL stamp by
+     frame name. Ambiguous when scans reuse frame names — drop the scan folder (with .dat)
+     for the scoped, collision-proof path instead. */
+  if(expEnv.length&&!datInDrop.length){
     Promise.all(expEnv.map(f=>readTextFile(f).catch(()=>null))).then(async texts=>{
       const merged={};
       texts.forEach(t=>{const m=t&&parseAlbaExpEnv(t);if(m)mergeExpEnvInto(merged,m);});
       if(Object.keys(merged).length){
         const n=await applyAlbaExpEnv(merged);
-        toast(`ExpEnv: temperature linked to ${n} pattern(s)`);
+        toast(`ExpEnv: temperature linked to ${n} pattern(s) (drop the scan folder to fix name-colliding scans)`);
       }else{
         toast('ExpEnv: no temperature rows recognized');
       }
@@ -3401,14 +3415,14 @@ function handleFiles(fileList){
       }
     })().catch(e=>{console.error(e);toast('.edf read error: '+(e.message||e));});
   }
-  const ACCEPTED=/\.(ras|scn|xrdml|hdf5|h5|dat)$/i;
-  const list=all.filter(f=>ACCEPTED.test(f.name)).sort((a,b)=>naturalCompare({name:a.name},{name:b.name}));
   if(!list.length){if(!expEnv.length&&!edf.length)toast('No .ras / .scn / .xrdml / .hdf5 / .dat files found');return;}
   /* Derive per-frame acquisition time from the ALBA .dat mtimes before reading contents,
      so processOne can stamp measurementStart (incl. batch-processed sibling detectors). */
   buildAlbaFrameTimeMap(list);
   const batchClaimed=new Set(); /* name hash keys claimed this batch, to guard the parallel-read dup race */
   const existingKeys=new Set(); /* name hash (text) / "N:"+name (HDF5) of records already in the DB */
+  const existingRecByKey=new Map(); /* same key → the cached record, so a dup .dat can be re-stamped */
+  const dropDupDats=[]; /* .dat skipped as duplicates this drop: {dupKey,frameCore,name} for scoped ExpEnv backfill */
   const batchNewIds=[]; /* IDs of files newly saved in this drop — used for post-upload bulk edit */
   const batchNewRecs=[]; /* corresponding payload records for pre-filling common values */
   /* Read one file as ArrayBuffer (HDF5) or text; resolves with the result or rejects with the error. */
@@ -3442,6 +3456,9 @@ function handleFiles(fileList){
       const dupKey=makeFileIdentityKey(f.name,contentHash,isHDF5);
       const alreadyInMemory=samples.some(s=>s.rawName===f.name&&(contentHash==null||s.contentHash===contentHash));
       if(alreadyInMemory||batchClaimed.has(dupKey)||existingKeys.has(dupKey)){
+        /* A duplicate .dat still pins its scan: record it so the drop's ExpEnv can re-stamp
+           the exact cached record/sample (scoped by content), not every same-named frame. */
+        if(/\.dat$/i.test(f.name))dropDupDats.push({dupKey,frameCore:albaFrameCore(f.name),name:f.name,contentHash});
         toast(`Skipped: "${f.name}" (identical file already loaded)`);return;
       }
       batchClaimed.add(dupKey);
@@ -3455,7 +3472,8 @@ function handleFiles(fileList){
          the file (e.g. .ras atmosphere temp), fall back to the filename. */
       /* ALBA .dat carries no temperature; a matching ExpEnv row (if already loaded)
          supplies it. Otherwise use the in-file value, falling back to the filename. */
-      const albaE=albaExpEnvMap[albaFrameCore(f.name)];
+      /* Prefer THIS drop's ExpEnv (folder-scoped, this scan's values) over the global map. */
+      const albaE=dropExpEnv[albaFrameCore(f.name)]||albaExpEnvMap[albaFrameCore(f.name)];
       if(albaE&&Number.isFinite(albaE.tempC)){
         p.tempSetPoint=albaE.tempC;p.tempStart=albaE.tempC;p.tempEnd=albaE.tempC;
         p.thermalTempOverride=albaE.tempC;p.thermalTempStartOverride=albaE.tempC;p.thermalTempEndOverride=albaE.tempC;
@@ -3519,13 +3537,21 @@ function handleFiles(fileList){
      on large drops — WebKit surfaces that as a read failure (legacy FileError code 5).
      A bounded pool keeps only a few reads in flight at a time. */
   (async()=>{
+    /* Parse this drop's ExpEnv (.alba/_header.txt) BEFORE reading the .dat, so processOne
+       stamps each frame from THIS scan's values (no race, no cross-scan global overwrite). */
+    if(expEnv.length&&datInDrop.length){
+      try{
+        const texts=await Promise.all(expEnv.map(f=>readTextFile(f).catch(()=>null)));
+        texts.forEach(t=>{const m=t&&parseAlbaExpEnv(t);if(m)mergeExpEnvInto(dropExpEnv,m);});
+      }catch(_e){}
+    }
     try{
       const existing=await adapter.listFiles();
       const incomingNames=new Set(list.map(f=>f.name));
       existing.forEach(r=>{
         if(!r||!r.name)return;
         const isH=typeof r.rawText==='string'&&r.rawText.startsWith('__HDF5_BASE64__');
-        if(isH){existingKeys.add(makeFileIdentityKey(r.name,null,true));return;}
+        if(isH){const k=makeFileIdentityKey(r.name,null,true);existingKeys.add(k);existingRecByKey.set(k,r);return;}
         let h=r.contentHash;
         if(h==null){
           /* Legacy record saved before content hashing: hash its stored text on the fly,
@@ -3533,7 +3559,7 @@ function handleFiles(fileList){
           if(!incomingNames.has(r.name)||typeof r.rawText!=='string')return;
           h=quickHash(r.rawText);
         }
-        existingKeys.add(makeFileIdentityKey(r.name,h,false));
+        const k=makeFileIdentityKey(r.name,h,false);existingKeys.add(k);existingRecByKey.set(k,r);
       });
     }catch(_e){}
     /* Seed the dataset-name counter before any file is saved, so the parallel pool
@@ -3555,7 +3581,32 @@ function handleFiles(fileList){
       for(const r of withKeys)n+=(await supersedeSameMeasurement(r,r.id,older)).length;
       if(n)toast(`${n} record(s) superseded by a newer integration — hidden; tick "Superseded" in the filter row to see them`);
     }
-    finishRasBatch({n:1}); /* single finalize after every read completes */
+    /* Folder-scoped ExpEnv backfill: a .dat that was skipped as a duplicate is still this
+       scan's frame, so re-stamp its EXACT cached record + loaded sample (matched by content
+       identity) with this drop's time/temp. Colliding same-named frames of OTHER scans are
+       never in dropDupDats, so they stay untouched. */
+    const scopedExpEnv=Object.keys(dropExpEnv).length>0&&datInDrop.length>0;
+    if(scopedExpEnv&&dropDupDats.length){
+      let nb=0;
+      for(const d of dropDupDats){
+        const e=dropExpEnv[d.frameCore];
+        if(!e)continue;
+        const rec=existingRecByKey.get(d.dupKey);
+        if(rec&&rec.id!=null){
+          const patch={...rec,id:rec.id};let changed=false;
+          if(Number.isFinite(e.tempC)&&rec.tempC!==e.tempC){patch.tempC=e.tempC;changed=true;}
+          if(e.timeIso&&rec.timeSrc!=='manual'&&rec.measurementStartIso!==e.timeIso){patch.measurementStartIso=e.timeIso;patch.timeSrc='expenv';changed=true;}
+          if(changed){try{await adapter.saveFile(patch);nb++;}catch(_e){}}
+        }
+        const s=samples.find(x=>x.rawName===d.name&&(d.contentHash==null||x.contentHash===d.contentHash));
+        if(s&&s._timeSrc!=='manual'){
+          if(Number.isFinite(e.tempC)){s.tempSetPoint=e.tempC;s.tempStart=e.tempC;s.tempEnd=e.tempC;s.thermalTempOverride=e.tempC;s.thermalTempStartOverride=e.tempC;s.thermalTempEndOverride=e.tempC;try{refreshSegmentsForSample(s);}catch(_e){}}
+          if(e.timeIso){const dt=new Date(e.timeIso);if(!isNaN(dt.getTime())){s.timeStart=dt;s.thermalTimeStartOverride=dt.toISOString();s._timeSrc='expenv';}}
+        }
+      }
+      if(nb)toast(`ExpEnv: re-stamped ${nb} cached frame(s) with this scan's time/temp`);
+    }
+    finishRasBatch({n:1,skipGlobalExpEnv:scopedExpEnv}); /* single finalize after every read completes */
     /* Post-upload bulk edit: when multiple new files were saved this batch, let the user
        set shared metadata (sample label, tags, instrument, site …) in one shot. */
     if(batchNewIds.length>1){
