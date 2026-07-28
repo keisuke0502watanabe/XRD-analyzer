@@ -9,3 +9,6 @@ gh.tar.gz
 
 # local sample data (not committed)
 _samples/
+
+# Local DB backups (large, not committed)
+db_backup/
