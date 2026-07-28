@@ -307,7 +307,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
       <button class="btn" onclick="exportThermalChart('pdf')">Thermal PDF</button>
       <button class="btn" onclick="exportCombineChart('png')">Combine PNG</button>
       <button class="btn" onclick="exportCombineChart('pdf')">Combine PDF</button>
-      <input type="file" id="fileIn" accept=".ras,.scn,.xrdml,.hdf5,.dat,.alba,.txt" multiple style="display:none">
+      <input type="file" id="fileIn" accept=".ras,.scn,.xrdml,.hdf5,.dat,.alba,.txt,.edf" multiple style="display:none">
       <input type="file" id="projectIn" accept=".json" style="display:none">
       <input type="file" id="dataIn" accept=".json" style="display:none">
       <input type="file" id="dbIn" accept=".json" style="display:none">
@@ -326,7 +326,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
     <!-- ===== DB & PROJECTS TAB ===== -->
     <section class="tabpane pane-flush active" data-pane="db" id="pane-db">
       <div id="dropZone" class="drop-zone db-pane-drop">
-        Drag &amp; drop <code>.ras</code> / <code>.scn</code> / <code>.xrdml</code> / <code>.hdf5</code> / <code>.dat</code> (ALBA/pyFAI) + <code>.alba</code> (ExpEnv) or <code>*_header.txt</code> (temperature log) files here, or click to select
+        Drag &amp; drop <code>.ras</code> / <code>.scn</code> / <code>.xrdml</code> / <code>.hdf5</code> / <code>.dat</code> (ALBA/pyFAI) + <code>.alba</code> (ExpEnv) / <code>*_header.txt</code> (temperature log) / RAW <code>.edf</code> (time+temp header) files here, or click to select
       </div>
       <aside class="db-dock" id="dbDock">
         <div class="db-dock-body">
@@ -2458,6 +2458,41 @@ function readTextFile(file){
   });
 }
 
+/** Read ONLY the leading header slice of a File as Latin-1 text. ALBA RAW .edf frames
+    are ~4 MB, but their "{ ... }" ASCII header sits in the first few KB — we slice it
+    off and never touch the image payload. */
+function readFileHeadText(file,bytes=8192){
+  return new Promise((res,rej)=>{
+    const r=new FileReader();
+    r.onload=e=>res(String(e.target.result));
+    r.onerror=()=>rej(r.error||new Error('read error'));
+    try{r.readAsText(file.slice(0,bytes),'ISO-8859-1');}catch(e){rej(e);}
+  });
+}
+
+/** Turn one ALBA .edf header slice into an ExpEnv entry {frameCore:{tempC,timeIso}}.
+    time_of_day is a Unix epoch (sub-second); linkamt95_t_i is the measured Linkam T95.
+    This is the SAME source ALBA dumps its *_header.txt from, and carries the time that
+    dump omits — so dropping the RAW .edf gives an accurate per-frame time axis. */
+function parseEdfHeaderExpEnv(headerText,fname){
+  if(!headerText)return null;
+  const end=headerText.indexOf('}');
+  const body=end>=0?headerText.slice(0,end):headerText;
+  /* EDF headers are "key = value ;" pairs; match them positionally so a leading "{"
+     or newlines never contaminate the first key. */
+  const kv={};
+  const re=/([A-Za-z_]\w*)\s*=\s*([^;]*);/g;
+  let m;while((m=re.exec(body))!==null)kv[m[1]]=m[2].trim();
+  const tRaw=parseFloat(kv['linkamt95_t_i']!=null?kv['linkamt95_t_i']:kv['linkamt95_t']);
+  const tempC=Number.isFinite(tRaw)?tRaw:null;
+  let timeIso=null;
+  const u=parseFloat(kv['time_of_day']);
+  if(Number.isFinite(u)&&u>1e9){const d=new Date(u*1000);if(!isNaN(d.getTime()))timeIso=d.toISOString();}
+  if(tempC==null&&!timeIso)return null;
+  const key=albaFrameCore(fname);
+  return key?{[key]:{tempC,timeIso}}:null;
+}
+
 /** Normalise a data/frame filename to the basename ALBA uses to cross-link .dat ↔ ExpEnv:
     strip directory, extension, and a trailing " (1)" download-dedupe suffix. */
 function albaBaseName(name){
@@ -3308,9 +3343,27 @@ function handleFiles(fileList){
       }
     }).catch(e=>{console.error(e);toast('ExpEnv read error: '+(e.message||e));});
   }
+  /* ALBA RAW .edf frames carry the acquisition time (time_of_day) + measured Linkam
+     temperature in their ASCII header. Read ONLY the header slice (never the 4 MB image)
+     and stamp the matching .dat frames — same path as an ExpEnv log, no data record made.
+     This is the in-app equivalent of tools/add_time_batch.py: drop the RAW folder to give
+     the reintegrated frames an accurate per-frame time axis. */
+  const edf=all.filter(f=>/\.edf$/i.test(f.name));
+  if(edf.length){
+    Promise.all(edf.map(f=>readFileHeadText(f).then(t=>parseEdfHeaderExpEnv(t,f.name)).catch(()=>null))).then(async maps=>{
+      const merged={};
+      maps.forEach(m=>{if(m)Object.assign(merged,m);});
+      if(Object.keys(merged).length){
+        const n=await applyAlbaExpEnv(merged);
+        toast(`RAW .edf: time/temp linked to ${n} pattern(s)`);
+      }else{
+        toast('RAW .edf: no time/temperature header found');
+      }
+    }).catch(e=>{console.error(e);toast('.edf read error: '+(e.message||e));});
+  }
   const ACCEPTED=/\.(ras|scn|xrdml|hdf5|h5|dat)$/i;
   const list=all.filter(f=>ACCEPTED.test(f.name)).sort((a,b)=>naturalCompare({name:a.name},{name:b.name}));
-  if(!list.length){if(!expEnv.length)toast('No .ras / .scn / .xrdml / .hdf5 / .dat files found');return;}
+  if(!list.length){if(!expEnv.length&&!edf.length)toast('No .ras / .scn / .xrdml / .hdf5 / .dat files found');return;}
   /* Derive per-frame acquisition time from the ALBA .dat mtimes before reading contents,
      so processOne can stamp measurementStart (incl. batch-processed sibling detectors). */
   buildAlbaFrameTimeMap(list);
