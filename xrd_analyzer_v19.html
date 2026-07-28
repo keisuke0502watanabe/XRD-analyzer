@@ -5279,7 +5279,12 @@ function setSegCombineStackOffset(si,gi,v){const n=parseFloat(v);samples[si].seg
 
 function downloadText(filename,text){
   const blob=new Blob([text],{type:'application/json;charset=utf-8'});
-  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;a.style.display='none';
+  document.body.appendChild(a);a.click();
+  /* Revoke on a delay (not synchronously): for a large export the browser is still
+     handling the click when a sync revoke would kill the blob URL, making <a download>
+     fall back to navigating to a now-dead blob: URL and showing an error page. */
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1000);
 }
 function stamp(){const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;}
 function chartExportPixelRatio(){return 2;}
