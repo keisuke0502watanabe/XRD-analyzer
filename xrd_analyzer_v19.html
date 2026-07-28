@@ -2686,14 +2686,25 @@ function buildAlbaFrameTimeMap(files){
     (both detectors of one scan share the tag) and idempotent (re-run replaces the scan
     tags it owns). Operates on cached DB records + loaded samples together for consistent
     numbering. Pass {toast:true} for the manual button. */
-/** Map each distinct scan group key → its scan tag (iso_1, ramp_up_2, …), numbering
-    groups within each scan type by signed-numeric filename order. Shared by the
-    auto-tagger and the scan-series builder so both label scans identically. */
+/** Turn a scan group key into a descriptive tag: keep the meaningful tokens
+    (scan type + target temp + run label) and drop the trailing zero sub-index and
+    any double underscore. "ramp_up_75_1st_000" → "ramp_up_75_1st",
+    "iso__48_2nd_ASM_000" → "iso_48_2nd_ASM". */
+function albaScanTag(groupKey){
+  return String(groupKey)
+    .replace(/__+/g,'_')   // collapse "iso__48" → "iso_48"
+    .replace(/_0+$/,'')    // drop trailing zero sub-index ("_000")
+    .replace(/_+$/,'')     // tidy any leftover trailing underscore
+    ||String(groupKey);
+}
+/** Map each distinct scan group key → its scan tag (ramp_up_75_1st, iso_48_2nd, …),
+    a descriptive name derived from the frame name. Shared by the auto-tagger and the
+    scan-series builder so both label scans identically. */
 function albaScanTagMap(names){
   const byType={};
   names.forEach(nm=>{const {scanType,groupKey}=albaScanParts(nm);(byType[scanType]=byType[scanType]||new Set()).add(groupKey);});
   const keyTag={};
-  Object.keys(byType).forEach(type=>{[...byType[type]].sort(albaScanKeyCmp).forEach((k,i)=>{keyTag[k]=`${type}_${i+1}`;});});
+  Object.keys(byType).forEach(type=>{[...byType[type]].forEach(k=>{keyTag[k]=albaScanTag(k);});});
   return {keyTag,types:Object.keys(byType)};
 }
 async function autoTagAlbaScans(opts){
@@ -3350,16 +3361,27 @@ function handleFiles(fileList){
      the reintegrated frames an accurate per-frame time axis. */
   const edf=all.filter(f=>/\.edf$/i.test(f.name));
   if(edf.length){
-    Promise.all(edf.map(f=>readFileHeadText(f).then(t=>parseEdfHeaderExpEnv(t,f.name)).catch(()=>null))).then(async maps=>{
-      const merged={};
-      maps.forEach(m=>{if(m)Object.assign(merged,m);});
+    /* Bound the header reads through a small worker pool. Opening a FileReader for
+       every .edf at once (a RAW folder can hold thousands of frames) exhausts WebKit's
+       reader resources and surfaces as FileError code 5 (NOT_READABLE_ERR) — which also
+       poisons the concurrent .dat pool below. Keep only a few reads in flight. */
+    (async()=>{
+      const merged={};let cur=0;
+      const worker=async()=>{
+        while(cur<edf.length){
+          const f=edf[cur++];
+          try{const t=await readFileHeadText(f);const m=parseEdfHeaderExpEnv(t,f.name);if(m)Object.assign(merged,m);}catch(_e){}
+        }
+      };
+      const POOL=Math.min(4,edf.length);
+      await Promise.all(Array.from({length:POOL},()=>worker()));
       if(Object.keys(merged).length){
         const n=await applyAlbaExpEnv(merged);
         toast(`RAW .edf: time/temp linked to ${n} pattern(s)`);
       }else{
         toast('RAW .edf: no time/temperature header found');
       }
-    }).catch(e=>{console.error(e);toast('.edf read error: '+(e.message||e));});
+    })().catch(e=>{console.error(e);toast('.edf read error: '+(e.message||e));});
   }
   const ACCEPTED=/\.(ras|scn|xrdml|hdf5|h5|dat)$/i;
   const list=all.filter(f=>ACCEPTED.test(f.name)).sort((a,b)=>naturalCompare({name:a.name},{name:b.name}));
