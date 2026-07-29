@@ -475,9 +475,19 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
               <span id="avramiCtrlWrap" style="display:none;align-items:center;gap:6px">
                 <label style="font-size:10px;display:flex;align-items:center;gap:3px" title="What X(t) is built from">X(t):
                   <select class="txt-sm" id="avramiSourceSel" onchange="updateThermalModeButtons();redrawThermal()"><option value="area">Peak area</option><option value="itheta">I(2θ)</option></select></label>
-                <label style="font-size:10px;display:flex;align-items:center;gap:3px" id="avramiHalfWrap" title="Half-width of the 2θ integration window for peak area (± deg)">±<input type="number" id="avramiHalfWin" class="num" style="width:48px" step="0.05" value="0.50" oninput="redrawThermal()">°</label>
+                <label style="font-size:10px;display:flex;align-items:center;gap:3px" id="avramiWinWrap" title="2θ integration window for peak area (baseline-subtracted, trapezoidal between these two edges)">win<input type="number" id="avramiWinMin" class="num" style="width:52px" step="0.05" value="4.50" oninput="onAvramiWindowInput()">–<input type="number" id="avramiWinMax" class="num" style="width:52px" step="0.05" value="5.50" oninput="onAvramiWindowInput()">°</label>
                 <label style="font-size:10px;display:flex;align-items:center;gap:3px" title="Fit only points with X between these bounds (avoids the noisy tails near 0 and 1)">X<input type="number" id="avramiXlo" class="num" style="width:44px" step="0.01" value="0.05" oninput="redrawThermal()">–<input type="number" id="avramiXhi" class="num" style="width:44px" step="0.01" value="0.95" oninput="redrawThermal()"></label>
+                <label style="font-size:10px;display:flex;align-items:center;gap:3px" title="How t=0 is chosen for the Avrami fit. auto = X first reaches 1% (matches the report's stated method). manual lets you nudge t0 by hand and watch n/R² update live.">t₀<select class="txt-sm" id="avramiT0Mode" onchange="onAvramiT0ModeChange()"><option value="induction">auto (X=1%)</option><option value="raw">frame 1</option><option value="manual">manual</option></select></label>
+                <span id="avramiT0ManualWrap" style="display:none;align-items:center;gap:2px;font-size:10px">
+                  <button type="button" class="btn" style="padding:1px 5px" onclick="avramiT0Nudge(-5)" title="−5 s">«</button>
+                  <button type="button" class="btn" style="padding:1px 5px" onclick="avramiT0Nudge(-1)" title="−1 s">‹</button>
+                  <input type="number" id="avramiT0ManualSec" class="num" style="width:60px" step="1" oninput="redrawThermal()">s
+                  <button type="button" class="btn" style="padding:1px 5px" onclick="avramiT0Nudge(1)" title="+1 s">›</button>
+                  <button type="button" class="btn" style="padding:1px 5px" onclick="avramiT0Nudge(5)" title="+5 s">»</button>
+                </span>
+                <button type="button" class="btn" id="avramiPreviewBtn" onclick="toggleAvramiPreview()" title="Show the pattern for one series member with the integration window overlaid, and its live integrated area — step through frames to pick a clean range before fitting">Preview pattern</button>
                 <button class="btn green" id="avramiSaveBtn" onclick="saveAvramiFeature()" title="Save this Avrami result as a series feature">Save series feature</button>
+                <button type="button" class="btn" id="avramiExportBtn" onclick="exportAvramiAllCsv()" title="Export 3 CSVs: time vs integrated area, time vs I(2θ) intensity, and the Avrami fit vs measured comparison">Export CSV (3 files)</button>
               </span>
               <select class="txt-sm" id="thermalSeriesSelect" style="max-width:160px" onchange="setActiveThermalSeriesId(this.value)"></select>
               <button class="btn" onclick="openSeriesEditorModal()">Edit series</button>
@@ -500,6 +510,18 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             </div>
           </div>
           <div id="thermalStatus" style="font-size:10px;color:var(--text3);padding:0 .75rem .35rem"></div>
+          <div id="avramiPreviewBox" style="display:none;padding:0 .75rem .5rem">
+            <div style="display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3);margin-bottom:3px;flex-wrap:wrap">
+              <span>Preview frame:</span>
+              <button type="button" class="btn" style="padding:1px 7px" onclick="avramiPreviewStep(-1)" title="Previous scan in this series">◀</button>
+              <select class="txt-sm" id="avramiPreviewSel" style="max-width:240px" onchange="onAvramiPreviewSelChange()"></select>
+              <button type="button" class="btn" style="padding:1px 7px" onclick="avramiPreviewStep(1)" title="Next scan in this series">▶</button>
+              <span id="avramiPreviewReadout" style="margin-left:auto;color:var(--text2);white-space:nowrap"></span>
+            </div>
+            <div style="height:230px;border:1px solid var(--border);border-radius:6px;padding:4px">
+              <canvas id="avramiPreviewCanvas"></canvas>
+            </div>
+          </div>
           <div class="panel-body canvas-box-sm">
             <canvas id="thermalCanvas"></canvas>
           </div>
@@ -575,7 +597,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
                   <button type="button" class="btn" id="combineModeStackBtn" onclick="setCombineMode('stack')">Stack</button>
                 </span>
               </label>
-              <label>Offset%<input class="num" id="combineOffsetInput" type="number" step="5" value="30" oninput="autoScaleCombineY()"></label>
+              <label>Offset%<input class="num" id="combineOffsetInput" type="number" step="5" value="0" oninput="autoScaleCombineY()"></label>
               <label>Offset mode<button type="button" class="btn" id="combineOffsetModeBtn" onclick="toggleCombineOffsetMode()">Equal</button></label>
               <label>Gain mode<button type="button" class="btn" id="combineGainModeBtn" onclick="toggleCombineGainMode()">Equal</button></label>
               <label>Gain%<input class="num" id="combineGainInput" type="number" step="5" value="100" min="1" oninput="redrawOuterChart()"></label>
@@ -1093,7 +1115,7 @@ const LEGEND_FORMAT_OPTIONS=[
   {id:'dataset',label:'Dataset name'}
 ];
 let legendFormatParts=['filename'];
-let xrdLegendPosition='top'; // top | beside
+let xrdLegendPosition='beside'; // top | beside — default to a side legend
 let legendBesideYMode='xMax'; // baseline | xMax
 let legendBesideYOffsetPx=0;
 let legendBesideXOffsetPx=0;
@@ -1544,6 +1566,37 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function normalizeFolderPath(p){
   if(p==null||String(p).trim()==='')return'';
   return String(p).trim().replace(/\\/g,'/').replace(/\/+/g,'/').replace(/^\/+|\/+$/g,'');
+}
+/** Turn the currently-applied DB file filter (dbFileFilter — the "Name / sample", tags, T range,
+    instrument, site, rating, and date-range controls in the DB dock) into a short, filesystem-safe
+    label such as "C8TAG_T-51to-41_ALBA". Empty when no filter is active. Used to auto-name project
+    folders, chart exports, and series so the name traces back to what was actually on screen. */
+function sanitizeForFileToken(s){return String(s||'').trim().replace(/[^\w.+-]+/g,'_').replace(/^_+|_+$/g,'');}
+const DB_TREE_DEFAULT_ORDER=['sample','measStart','temp'];
+/** "by-<field>-<field>..." when the DB tree grouping order (dbTreeOrder, set via the tree-level
+    selects in the DB dock) differs from the default — blank when it's untouched, so naming behaviour
+    doesn't change for people who never reorder it. */
+function dbTreeOrderTag(){
+  if(!dbTreeOrder||!dbTreeOrder.length)return'';
+  const isDefault=dbTreeOrder.length===DB_TREE_DEFAULT_ORDER.length&&dbTreeOrder.every((f,i)=>f===DB_TREE_DEFAULT_ORDER[i]);
+  return isDefault?'':'by-'+dbTreeOrder.join('-');
+}
+function dbFilterSummaryLabel(){
+  const f=dbFileFilter||{};
+  const parts=[];
+  const treeTag=dbTreeOrderTag();
+  if(treeTag)parts.push(treeTag);
+  if(f.text)parts.push(f.text);
+  if(f.tags&&f.tags.length)parts.push(f.tags.join('+'));
+  if(f.tempMin!==''&&f.tempMin!=null&&f.tempMax!==''&&f.tempMax!=null)parts.push(`T${f.tempMin}to${f.tempMax}`);
+  else if(f.tempMin!==''&&f.tempMin!=null)parts.push(`Tge${f.tempMin}`);
+  else if(f.tempMax!==''&&f.tempMax!=null)parts.push(`Tle${f.tempMax}`);
+  if(f.instrument)parts.push(f.instrument);
+  if(f.site)parts.push(f.site);
+  if(f.rating)parts.push(f.rating==='0'?'unrated':`${f.rating}star`);
+  if(f.uploadFrom||f.uploadTo)parts.push(`up${f.uploadFrom||'..'}-${f.uploadTo||'..'}`);
+  if(f.editFrom||f.editTo)parts.push(`ed${f.editFrom||'..'}-${f.editTo||'..'}`);
+  return parts.map(sanitizeForFileToken).filter(Boolean).join('_');
 }
 /** Acquisition folder from a pyFAI .dat "# --> /abs/path/file.dat" header line, trimmed
     to a readable relative path (after PROCESSED/RAW/DATA, else the last 4 segments).
@@ -4090,6 +4143,34 @@ function applyOuterChartLayout(){
   syncOuterChartHeight();
   redrawOuterChart();
 }
+// Defaults for a brand-new pattern (Patterns tab): offset 0 (no vertical stacking), Y auto-scaled
+// (blank = Chart.js fits to data), otherwise matching the app's usual XRD view. Legend side/top is a
+// global preference (see xrdLegendPosition default above), not per-pattern, so it isn't listed here.
+const COMBINE_DEFAULT_CHART_SETTINGS={
+  outerChartHeight:420,
+  combineMode:'overlay',
+  combineOffsetMode:'equal',
+  combineGainMode:'equal',
+  combineXAxisMode:'2theta',
+  combineOffsetPct:'0',
+  combineGainPct:'100',
+  combineXMin:'2',
+  combineXMax:'32',
+  combineYMin:'',
+  combineYMax:'',
+  combineXScale:'linear',
+  combineYScale:'linear',
+  combineXTitle:'',
+  combineYTitle:''
+};
+// applyCombineChartSettingsToDom()'s set() helper skips empty-string values (so it never clobbers a
+// field with blank), which is right for restoring a saved pattern but wrong here: a brand-new pattern
+// must actively reset Y min/max to auto, not just leave whatever the previous pattern had on screen.
+function applyCombineDefaultsToDom(){
+  applyCombineChartSettingsToDom(COMBINE_DEFAULT_CHART_SETTINGS);
+  const yMinEl=document.getElementById('combineYMin');if(yMinEl)yMinEl.value='';
+  const yMaxEl=document.getElementById('combineYMax');if(yMaxEl)yMaxEl.value='';
+}
 function readCombineChartSettingsFromDom(){
   const h=parseFloat(document.getElementById('outerChartHeight')?.value);
   if(isFinite(h))outerChartHeight=Math.max(200,Math.min(2000,h));
@@ -4356,10 +4437,10 @@ function redrawIvsTime(){
 const AVRAMI_ISO_TOL=2.0;   // °C spread above which the series is flagged non-isothermal
 let _lastAvrami=null;        // last successful computeAvrami() result, for the Save button
 
-// Baseline-subtracted trapezoidal peak area over a 2θ window (linear baseline between the window ends).
-function integratedPeakArea(tth,inten,center,half){
+// Baseline-subtracted trapezoidal peak area over an explicit 2θ window [lo,hi] (linear baseline between the window ends).
+function integratedPeakAreaRange(tth,inten,lo,hi){
   if(!tth||!tth.length)return null;
-  const lo=center-half,hi=center+half;
+  if(!(hi>lo))return null;
   const yLo=interpolateIntensityAt(tth,inten,lo),yHi=interpolateIntensityAt(tth,inten,hi);
   if(!Number.isFinite(yLo)||!Number.isFinite(yHi))return null;
   const base=x=>yLo+(yHi-yLo)*(x-lo)/(hi-lo);
@@ -4374,6 +4455,10 @@ function integratedPeakArea(tth,inten,center,half){
     area+=(x1-x0)*(s0+s1)/2;
   }
   return area;
+}
+// Back-compat wrapper: center ± half → range.
+function integratedPeakArea(tth,inten,center,half){
+  return integratedPeakAreaRange(tth,inten,center-half,center+half);
 }
 // Ordinary least squares y=a+b·x → {a,b,r2,n}
 function linFit(xs,ys){
@@ -4390,30 +4475,62 @@ function linFit(xs,ys){
 function avramiRawSeries(){
   const ser=activeThermalSeriesId?thermalSeriesList.find(x=>x.id===activeThermalSeriesId):null;
   if(!ser||!ser.memberUids?.length)return {error:'Select a series'};
-  const theta=parseFloat(document.getElementById('ithetaInput')?.value);
-  if(!Number.isFinite(theta))return {error:'Set 2θ'};
   const source=document.getElementById('avramiSourceSel')?.value||'area';
-  const half=Math.abs(parseFloat(document.getElementById('avramiHalfWin')?.value))||0.5;
+  const theta=parseFloat(document.getElementById('ithetaInput')?.value);
+  const winMin=parseFloat(document.getElementById('avramiWinMin')?.value);
+  const winMax=parseFloat(document.getElementById('avramiWinMax')?.value);
+  if(source==='itheta'){
+    if(!Number.isFinite(theta))return {error:'Set 2θ'};
+  }else{
+    if(!Number.isFinite(winMin)||!Number.isFinite(winMax)||!(winMax>winMin))return {error:'Set a valid 2θ window (min < max)'};
+  }
   const rows=[];
   ser.memberUids.forEach(uid=>{
     const s=samples.find(x=>x.sampleUid===uid);if(!s||!s.tth?.length)return;
     const eff=thermalPointOrWindow(s);if(!eff)return;
-    const S=source==='itheta'?interpolateIntensityAt(s.tth,s.intensity,theta):integratedPeakArea(s.tth,s.intensity,theta,half);
+    const S=source==='itheta'?interpolateIntensityAt(s.tth,s.intensity,theta):integratedPeakAreaRange(s.tth,s.intensity,winMin,winMax);
     if(!Number.isFinite(S))return;
     rows.push({tMs:eff.t0.getTime(),S,tempC:featSampleTempC(s),uid});
   });
-  if(rows.length<3)return {error:`Need ≥3 usable scans (got ${rows.length})`,ser,theta,source,half};
+  const half=Number.isFinite(winMin)&&Number.isFinite(winMax)?(winMax-winMin)/2:null;
+  const center=Number.isFinite(winMin)&&Number.isFinite(winMax)?(winMin+winMax)/2:theta;
+  if(rows.length<3)return {error:`Need ≥3 usable scans (got ${rows.length})`,ser,theta:center,source,half,winMin,winMax};
   rows.sort((a,b)=>a.tMs-b.tMs);
-  return {ser,theta,source,half,rows};
+  return {ser,theta:center,source,half,winMin,winMax,rows};
 }
 // Full Avrami fit over the active series.
+// t0 = induction time (X reaches 1%), matching the report's stated method — NOT the first
+// frame's absolute recording time. If the recording window includes any dead time before
+// the hold's true onset, anchoring at frame 1 bakes that dead time into every ln(t), which
+// biases the fitted slope n. Modes: 'raw' = old behaviour, 'induction' = auto (X=1%), 'manual' = hand-tuned via #avramiT0ManualSec.
+function estimateInductionMs(rows,S0,Sinf,frac){
+  for(let i=1;i<rows.length;i++){
+    const X0=(rows[i-1].S-S0)/(Sinf-S0),X1=(rows[i].S-S0)/(Sinf-S0);
+    if(X0<frac&&X1>=frac){
+      const t0=rows[i-1].tMs,t1=rows[i].tMs;
+      const f=(X1>X0)?(frac-X0)/(X1-X0):0;
+      return t0+f*(t1-t0);
+    }
+  }
+  return rows[0].tMs; // never reaches frac (e.g. frac too high, or already crystallizing at frame 1): fall back
+}
 function computeAvrami(){
   const raw=avramiRawSeries();
   if(raw.error)return raw;
-  const {rows,theta,source,half,ser}=raw;
-  const t0Ms=rows[0].tMs;
+  const {rows,theta,source,half,ser,winMin,winMax}=raw;
   const S0=Math.min(...rows.map(r=>r.S)),Sinf=Math.max(...rows.map(r=>r.S));
   if(Sinf-S0<=0)return {error:'Signal is flat (S∞=S0) — no crystallization to fit'};
+  const t0Mode=document.getElementById('avramiT0Mode')?document.getElementById('avramiT0Mode').value:'induction';
+  let t0Ms;
+  if(t0Mode==='manual'){
+    const manualSec=parseFloat(document.getElementById('avramiT0ManualSec')?.value);
+    t0Ms=rows[0].tMs+(Number.isFinite(manualSec)?manualSec:0)*1000;
+  }else if(t0Mode==='raw'){
+    t0Ms=rows[0].tMs;
+  }else{
+    t0Ms=estimateInductionMs(rows,S0,Sinf,0.01);
+  }
+  const inductionSec=(t0Ms-rows[0].tMs)/1000;
   const xlo=parseFloat(document.getElementById('avramiXlo')?.value),xhi=parseFloat(document.getElementById('avramiXhi')?.value);
   const lo=Number.isFinite(xlo)?xlo:0.05,hi=Number.isFinite(xhi)?xhi:0.95;
   const pts=[],fx=[],fy=[];
@@ -4424,13 +4541,13 @@ function computeAvrami(){
     if(tSec>0&&X>lo&&X<hi&&X<1){fx.push(Math.log(tSec));fy.push(Math.log(-Math.log(1-X)));pt.used=true;}
   });
   const fit=linFit(fx,fy);
-  if(!fit)return {error:`Only ${fx.length} point(s) inside X∈(${lo},${hi}); need ≥2`,S0,Sinf,pts,theta,source,half,ser};
+  if(!fit)return {error:`Only ${fx.length} point(s) inside X∈(${lo},${hi}); need ≥2`,S0,Sinf,pts,theta,source,half,ser,t0Mode,inductionSec};
   const nAv=fit.b,lnk=fit.a,k=Math.exp(lnk);
   const tHalf=(k>0&&nAv>0)?Math.pow(Math.LN2/k,1/nAv):null;
   const temps=rows.map(r=>r.tempC).filter(Number.isFinite);
   const tempMean=temps.length?temps.reduce((a,b)=>a+b,0)/temps.length:null;
   const tempSpread=temps.length?Math.max(...temps)-Math.min(...temps):null;
-  return {ok:true,n:nAv,k,lnk,tHalf,r2:fit.r2,S0,Sinf,pts,nUsed:fit.n,theta,source,half,ser,lo,hi,tempMean,tempSpread,fx,fy,fit};
+  return {ok:true,n:nAv,k,lnk,tHalf,r2:fit.r2,S0,Sinf,pts,nUsed:fit.n,theta,source,half,winMin,winMax,ser,lo,hi,tempMean,tempSpread,fx,fy,fit,t0Mode,inductionSec};
 }
 function redrawAvrami(){
   if(thermalChart)thermalChart.destroy();
@@ -4464,11 +4581,127 @@ function redrawAvrami(){
       })}
   });
   const f=v=>v==null?'–':(+v).toPrecision(4);
-  let msg=`Avrami (${res.source==='itheta'?'I(2θ)':'peak area ±'+res.half+'°'} @ 2θ=${res.theta}°): `
+  const winTxt=(res.winMin!=null&&res.winMax!=null)?`peak area ${res.winMin}\u2013${res.winMax}\u00b0`:'peak area';
+  let msg=`Avrami (${res.source==='itheta'?'I(2θ) @ 2θ='+res.theta+'°':winTxt}): `
     +`n=${f(res.n)}  k=${f(res.k)} s⁻ⁿ  t½=${res.tHalf!=null?f(res.tHalf)+' s':'–'}  R²=${res.r2.toFixed(4)}  (${res.nUsed} pts, X∈(${res.lo},${res.hi}))`;
+  const t0Label={raw:'frame 1 (raw)',induction:'auto, X=1%',manual:'manual'}[res.t0Mode]||res.t0Mode;
+  msg+=`  t₀=${t0Label} (${f(res.inductionSec)}s)`;
   if(res.tempMean!=null)msg+=`  T̄=${res.tempMean.toFixed(1)}°C`;
   if(res.tempSpread!=null&&res.tempSpread>AVRAMI_ISO_TOL)msg+=`   ⚠ non-isothermal: ΔT=${res.tempSpread.toFixed(1)}°C across the series (Avrami assumes isothermal)`;
   if(statusEl)statusEl.textContent=msg;
+}
+function avramiCsvEsc(v){if(v==null)return'';const s=String(v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+function avramiCsvDownload(filename,lines){
+  const blob=new Blob(['\ufeff'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download=filename;a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function avramiSeriesNameSafe(){
+  const ser=activeThermalSeriesId?thermalSeriesList.find(x=>x.id===activeThermalSeriesId):null;
+  return (ser?.name||'series').replace(/[^\w.-]+/g,'_');
+}
+// File 1: time vs baseline-subtracted integrated peak area, for every member of the active series
+// (independent of which X(t) source is currently selected — always uses the win-min/max window).
+function exportAvramiAreaCsv(){
+  const winMin=parseFloat(document.getElementById('avramiWinMin')?.value);
+  const winMax=parseFloat(document.getElementById('avramiWinMax')?.value);
+  if(!Number.isFinite(winMin)||!Number.isFinite(winMax)||!(winMax>winMin)){toast('Avrami: set a valid 2θ window (min < max) first');return;}
+  const rows=avramiPreviewSamples();
+  if(!rows.length){toast('Avrami: select a series first');return;}
+  const t0Ms=rows[0].tMs;
+  const cols=['index','sample_uid','file_name','datetime_iso','temp_C','elapsed_s','window_min_deg','window_max_deg','integrated_area'];
+  const lines=[cols.join(',')];
+  rows.forEach((r,i)=>{
+    const area=integratedPeakAreaRange(r.s.tth,r.s.intensity,winMin,winMax);
+    lines.push([i+1,r.uid,r.s.rawName||r.s.name,new Date(r.tMs).toISOString(),featSampleTempC(r.s),((r.tMs-t0Ms)/1000).toFixed(3),winMin,winMax,Number.isFinite(area)?area:''].map(avramiCsvEsc).join(','));
+  });
+  avramiCsvDownload(`avrami_area_vs_time_${avramiSeriesNameSafe()}_${stamp()}.csv`,lines);
+}
+// File 2: time vs raw (no baseline subtraction) intensity at a fixed 2θ — the "I(2θ)" / peak-intensity channel.
+function exportAvramiIntensityCsv(){
+  const theta=parseFloat(document.getElementById('ithetaInput')?.value);
+  if(!Number.isFinite(theta)){toast('Avrami: set 2θ first');return;}
+  const rows=avramiPreviewSamples();
+  if(!rows.length){toast('Avrami: select a series first');return;}
+  const t0Ms=rows[0].tMs;
+  const cols=['index','sample_uid','file_name','datetime_iso','temp_C','elapsed_s','two_theta_deg','intensity_raw'];
+  const lines=[cols.join(',')];
+  rows.forEach((r,i)=>{
+    const y=interpolateIntensityAt(r.s.tth,r.s.intensity,theta);
+    lines.push([i+1,r.uid,r.s.rawName||r.s.name,new Date(r.tMs).toISOString(),featSampleTempC(r.s),((r.tMs-t0Ms)/1000).toFixed(3),theta,Number.isFinite(y)?y:''].map(avramiCsvEsc).join(','));
+  });
+  avramiCsvDownload(`avrami_intensity_vs_time_${avramiSeriesNameSafe()}_${stamp()}.csv`,lines);
+}
+// File 3: the Avrami fit as currently configured (source/window/X-range/t0 anchor) — fit equation,
+// parameters, and a per-frame measured-vs-model comparison (both in ln-ln space and back-transformed X).
+function exportAvramiFitCsv(){
+  const res=computeAvrami();
+  if(!res||res.error){toast('Avrami: '+((res&&res.error)||'nothing to fit'));return;}
+  const winTxt=(res.winMin!=null&&res.winMax!=null)?`${res.winMin}-${res.winMax} deg`:'n/a';
+  const head=[
+    `# series,${avramiCsvEsc(res.ser?.name||'')}`,
+    `# X(t) source,${res.source}`,
+    `# 2theta window (deg),${res.source==='area'?winTxt:'n/a'}`,
+    `# 2theta point (deg),${res.source==='itheta'?res.theta:'n/a'}`,
+    `# model,X = 1 - exp[-k*(t-t0)^n]`,
+    `# n,${res.n}`,
+    `# k (s^-n),${res.k}`,
+    `# ln_k,${res.lnk}`,
+    `# t_half_s,${res.tHalf}`,
+    `# R2,${res.r2}`,
+    `# fit_X_range,${res.lo}-${res.hi}`,
+    `# points_used,${res.nUsed}`,
+    `# t0_anchor,${({raw:'first frame (raw)',induction:'induction time (X=1%)',manual:'manual'}[res.t0Mode]||res.t0Mode)}`,
+    `# induction_time_s,${res.inductionSec!=null?res.inductionSec:''}`,
+    `# T_mean_C,${res.tempMean!=null?res.tempMean.toFixed(2):''}`,
+    `# T_spread_C,${res.tempSpread!=null?res.tempSpread.toFixed(2):''}`,
+    `# S0,${res.S0}`,
+    `# Sinf,${res.Sinf}`,
+    `# generated,${new Date().toISOString()}`,
+    ''
+  ];
+  const cols=['index','sample_uid','temp_C','elapsed_s_from_t0','used_in_fit','X_measured','ln_t','ln_negln1mX_measured','ln_negln1mX_fit','X_fit'];
+  const lines=[...head,cols.join(',')];
+  res.pts.forEach((p,i)=>{
+    let lnT='',lnMeas='',lnFit='',xFit='';
+    if(p.tSec>0){
+      lnT=Math.log(p.tSec);
+      lnFit=res.fit.a+res.fit.b*lnT;
+      xFit=1-Math.exp(-Math.exp(lnFit));
+      if(p.X>0&&p.X<1)lnMeas=Math.log(-Math.log(1-p.X));
+    }
+    lines.push([i+1,p.uid,p.tempC,p.tSec.toFixed(3),p.used?'yes':'no',p.X,lnT,lnMeas,lnFit,xFit].map(avramiCsvEsc).join(','));
+  });
+  avramiCsvDownload(`avrami_fit_vs_measured_${avramiSeriesNameSafe()}_${stamp()}.csv`,lines);
+}
+// One click → all three files (staggered slightly so the browser doesn't treat them as a download flood).
+function exportAvramiAllCsv(){
+  exportAvramiAreaCsv();
+  setTimeout(exportAvramiIntensityCsv,300);
+  setTimeout(exportAvramiFitCsv,600);
+}
+function onAvramiT0ModeChange(){
+  const mode=document.getElementById('avramiT0Mode')?.value;
+  const wrap=document.getElementById('avramiT0ManualWrap');
+  if(wrap)wrap.style.display=mode==='manual'?'inline-flex':'none';
+  if(mode==='manual'){
+    // Seed the manual field from whatever t0 is currently in effect (last computed induction time,
+    // or 0), so fine-tuning starts from a sane value instead of from an empty box.
+    const manualEl=document.getElementById('avramiT0ManualSec');
+    if(manualEl&&manualEl.value===''){
+      const seed=(_lastAvrami&&!_lastAvrami.error&&_lastAvrami.inductionSec!=null)?_lastAvrami.inductionSec:0;
+      manualEl.value=seed.toFixed(1);
+    }
+  }
+  redrawThermal();
+}
+function avramiT0Nudge(deltaSec){
+  const el=document.getElementById('avramiT0ManualSec');
+  if(!el)return;
+  const cur=parseFloat(el.value)||0;
+  el.value=(cur+deltaSec).toFixed(1);
+  redrawThermal();
 }
 async function saveAvramiFeature(){
   const res=computeAvrami();   // recompute from current controls so the saved row matches what's shown
@@ -4484,11 +4717,15 @@ async function saveAvramiFeature(){
     memberCount:(ser.memberUids||[]).length,
     source:res.source,                              // 'area' | 'itheta'
     two_theta_deg:+res.theta.toFixed(4),
-    windowHalfWidth_deg:res.source==='area'?+res.half.toFixed(4):null,
+    windowHalfWidth_deg:res.source==='area'&&res.half!=null?+res.half.toFixed(4):null,
+    windowMin_deg:res.source==='area'&&res.winMin!=null?+res.winMin.toFixed(4):null,
+    windowMax_deg:res.source==='area'&&res.winMax!=null?+res.winMax.toFixed(4):null,
     avrami_n:+res.n.toFixed(4),
     rate_k:res.k,
     ln_k:+res.lnk.toFixed(5),
     t_half_s:res.tHalf!=null?+res.tHalf.toFixed(3):null,
+    t0Mode:res.t0Mode,
+    inductionTime_s:res.inductionSec!=null?+res.inductionSec.toFixed(3):null,
     S0:+res.S0.toFixed(4),Sinf:+res.Sinf.toFixed(4),
     r2:+res.r2.toFixed(5),
     nPointsUsed:res.nUsed,
@@ -4508,6 +4745,118 @@ async function saveAvramiFeature(){
   }catch(e){console.error(e);toast('Save failed: '+(e.message||e));}
 }
 
+/* ===== Avrami window preview: pattern + shaded integration range + live area, for picking a window before fitting ===== */
+let avramiPreviewOn=false;
+let avramiPreviewChart=null;
+let avramiPreviewUid=null;   // sampleUid of the currently previewed member
+function avramiPreviewSamples(){
+  const ser=activeThermalSeriesId?thermalSeriesList.find(x=>x.id===activeThermalSeriesId):null;
+  if(!ser||!ser.memberUids?.length)return[];
+  const rows=[];
+  ser.memberUids.forEach(uid=>{
+    const s=samples.find(x=>x.sampleUid===uid);if(!s||!s.tth?.length)return;
+    const eff=thermalPointOrWindow(s);
+    rows.push({uid,s,tMs:eff?eff.t0.getTime():0});
+  });
+  rows.sort((a,b)=>a.tMs-b.tMs);
+  return rows;
+}
+function toggleAvramiPreview(){
+  avramiPreviewOn=!avramiPreviewOn;
+  const box=document.getElementById('avramiPreviewBox');
+  const areaSrc=document.getElementById('avramiSourceSel')?.value==='area';
+  if(box)box.style.display=(avramiPreviewOn&&thermalViewMode==='avrami'&&areaSrc)?'':'none';
+  const btn=document.getElementById('avramiPreviewBtn');
+  if(btn)btn.classList.toggle('active',avramiPreviewOn);
+  if(avramiPreviewOn)refreshAvramiPreviewList();
+}
+function refreshAvramiPreviewList(){
+  const sel=document.getElementById('avramiPreviewSel');
+  if(!sel)return;
+  const rows=avramiPreviewSamples();
+  if(!rows.length){sel.innerHTML='<option value="">(no scans in series)</option>';avramiPreviewUid=null;redrawAvramiPreview();return;}
+  if(!avramiPreviewUid||!rows.some(r=>r.uid===avramiPreviewUid))avramiPreviewUid=rows[Math.floor(rows.length/2)].uid; // default: mid-series frame
+  sel.innerHTML=rows.map((r,i)=>{
+    const t=featSampleTempC(r.s);
+    const tTxt=Number.isFinite(t)?t.toFixed(1)+'°C':'?°C';
+    return `<option value="${esc(r.uid)}">#${i+1}/${rows.length} · ${esc(chartLegendForSample(r.s))} · ${tTxt}</option>`;
+  }).join('');
+  sel.value=avramiPreviewUid;
+  redrawAvramiPreview();
+}
+function onAvramiPreviewSelChange(){
+  const sel=document.getElementById('avramiPreviewSel');
+  avramiPreviewUid=sel?sel.value:null;
+  redrawAvramiPreview();
+}
+function avramiPreviewStep(dir){
+  const rows=avramiPreviewSamples();
+  if(!rows.length)return;
+  let i=rows.findIndex(r=>r.uid===avramiPreviewUid);
+  if(i<0)i=0;
+  i=Math.max(0,Math.min(rows.length-1,i+dir));
+  avramiPreviewUid=rows[i].uid;
+  const sel=document.getElementById('avramiPreviewSel');
+  if(sel)sel.value=avramiPreviewUid;
+  redrawAvramiPreview();
+}
+// Called on every keystroke in the window-min/max fields: keeps the full-series Avrami fit
+// and the single-frame preview (pattern + shaded window + live area) both live.
+function onAvramiWindowInput(){
+  redrawThermal();
+  if(avramiPreviewOn)redrawAvramiPreview();
+}
+function redrawAvramiPreview(){
+  const canvas=document.getElementById('avramiPreviewCanvas');
+  if(!canvas)return;
+  const readout=document.getElementById('avramiPreviewReadout');
+  const rows=avramiPreviewSamples();
+  const row=rows.find(r=>r.uid===avramiPreviewUid);
+  if(avramiPreviewChart){avramiPreviewChart.destroy();avramiPreviewChart=null;}
+  if(!row){if(readout)readout.textContent='';return;}
+  const s=row.s;
+  const lo=parseFloat(document.getElementById('avramiWinMin')?.value);
+  const hi=parseFloat(document.getElementById('avramiWinMax')?.value);
+  const validWin=Number.isFinite(lo)&&Number.isFinite(hi)&&hi>lo;
+  const tthMin=Math.min(...s.tth),tthMax=Math.max(...s.tth);
+  const pad=validWin?Math.max((hi-lo)*2.5,0.5):1.0;
+  const dispLo=Math.max(tthMin,(validWin?lo:s.tth[0])-pad);
+  const dispHi=Math.min(tthMax,(validWin?hi:s.tth[s.tth.length-1])+pad);
+  const patternPts=[];
+  for(let i=0;i<s.tth.length;i++){const x=s.tth[i];if(x>=dispLo&&x<=dispHi)patternPts.push({x,y:s.intensity[i]});}
+  const yVals=patternPts.map(p=>p.y);
+  const yMin=yVals.length?Math.min(...yVals):0,yMax=yVals.length?Math.max(...yVals):1;
+  const yPad=Math.max((yMax-yMin)*0.08,1e-9);
+  const datasets=[{label:'pattern',data:patternPts,showLine:true,borderColor:'#2563eb',borderWidth:1.5,pointRadius:0,tension:0.15}];
+  let area=null,yLo=null,yHi=null;
+  if(validWin){
+    area=integratedPeakAreaRange(s.tth,s.intensity,lo,hi);
+    yLo=interpolateIntensityAt(s.tth,s.intensity,lo);
+    yHi=interpolateIntensityAt(s.tth,s.intensity,hi);
+    if(Number.isFinite(yLo)&&Number.isFinite(yHi)){
+      datasets.push({label:'baseline',data:[{x:lo,y:yLo},{x:hi,y:yHi}],showLine:true,borderColor:'#ef4444',borderDash:[5,3],borderWidth:1.5,pointRadius:0});
+      datasets.push({label:'window',data:[{x:lo,y:yMin-yPad},{x:lo,y:yMax+yPad}],showLine:true,borderColor:'#94a3b8',borderDash:[3,3],borderWidth:1,pointRadius:0});
+      datasets.push({label:'window ',data:[{x:hi,y:yMin-yPad},{x:hi,y:yMax+yPad}],showLine:true,borderColor:'#94a3b8',borderDash:[3,3],borderWidth:1,pointRadius:0});
+    }
+  }
+  avramiPreviewChart=new Chart(canvas,{
+    type:'scatter',
+    data:{datasets},
+    options:{animation:false,parsing:false,responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{type:'linear',min:dispLo,max:dispHi,title:{display:true,text:'2θ (deg)',font:{size:10}}},
+        y:{min:yMin-yPad,max:yMax+yPad,title:{display:true,text:'Intensity (cps)',font:{size:10}}}
+      }}
+  });
+  if(readout){
+    const t=featSampleTempC(s);
+    const tTxt=Number.isFinite(t)?t.toFixed(1)+'°C':'?°C';
+    readout.textContent=validWin
+      ? `${tTxt} · window ${lo}\u2013${hi}\u00b0 · area=${Number.isFinite(area)?area.toPrecision(5):'–'} · peak max=${yMax.toPrecision(5)}`
+      : `${tTxt} · set a valid window (min < max)`;
+  }
+}
 function redrawThermal(){
   if(thermalViewMode==='avrami'){redrawAvrami();return;}
   if(thermalMultiSeries&&redrawThermalMultiSeries())return;
@@ -4920,8 +5269,9 @@ function setActiveCombineName(v){
 function addNewCombine(){
   const id=newSampleUid();
   const rootCount=combineList.filter(c=>!c.parentId).length+1;
-  combineList.push({id,name:`Pattern_${rootCount}`,parentId:null,traces:[],chartSettings:readCombineChartSettingsFromDom()});
+  combineList.push({id,name:`Pattern_${rootCount}`,parentId:null,traces:[],chartSettings:{...COMBINE_DEFAULT_CHART_SETTINGS}});
   activeCombineId=id;
+  applyCombineDefaultsToDom();
   basketSearch='';const bs=document.getElementById('basketSearch');if(bs)bs.value='';
   renderAll();
 }
@@ -4936,8 +5286,9 @@ function addCombineFromSeries(){
     if(!s)return null;
     return{sampleUid:uid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0};
   }).filter(Boolean);
-  combineList.push({id,name:`Pattern: ${ser.name}`,parentId:null,traces,chartSettings:readCombineChartSettingsFromDom()});
+  combineList.push({id,name:`Pattern: ${ser.name}`,parentId:null,traces,chartSettings:{...COMBINE_DEFAULT_CHART_SETTINGS}});
   activeCombineId=id;
+  applyCombineDefaultsToDom();
   renderAll();
   toast(`Pattern created: ${traces.length} traces`);
 }
@@ -5109,16 +5460,38 @@ function updateThermalModeButtons(){
   if(w)w.style.display=(thermalViewMode==='itheta'||thermalViewMode==='avrami')?'flex':'none';
   if(av)av.style.display=thermalViewMode==='avrami'?'inline-flex':'none';
   /* Peak-area window only matters when X(t) comes from area. */
-  const half=document.getElementById('avramiHalfWrap');
-  if(half)half.style.display=(document.getElementById('avramiSourceSel')?.value==='area')?'flex':'none';
+  const win=document.getElementById('avramiWinWrap');
+  const areaSrc=document.getElementById('avramiSourceSel')?.value==='area';
+  if(win)win.style.display=areaSrc?'flex':'none';
+  const pbtn=document.getElementById('avramiPreviewBtn');
+  if(pbtn)pbtn.style.display=areaSrc?'':'none';
+  const pbox=document.getElementById('avramiPreviewBox');
+  if(pbox&&(thermalViewMode!=='avrami'||!areaSrc))pbox.style.display='none';
+  if(thermalViewMode==='avrami'&&areaSrc&&avramiPreviewOn)refreshAvramiPreviewList();
 }
 function setThermalViewMode(m){
   thermalViewMode=m;
   if(m==='series'||m==='avrami'){
-    if(!thermalSeriesList.length){toast('Create a series (Edit series)');thermalViewMode='per';}
+    if(!thermalSeriesList.length){
+      toast('Create a series (Edit series)');
+      thermalViewMode='per';
+      if(m==='avrami')openSeriesEditorModalAutoFiltered();
+    }
     else if(!activeThermalSeriesId||!thermalSeriesList.some(x=>x.id===activeThermalSeriesId))activeThermalSeriesId=thermalSeriesList[0].id;
   }
   updateThermalModeButtons();renderThermalSeriesSelect();redrawThermal();
+}
+/** Feature 3: streamline "Avrami with no series yet" — open the series editor pre-populated from
+    the current DB filter (name/folder) with every loaded sample checked ("All"), so the person can
+    just hit Apply and go straight into fitting instead of building the series by hand first. */
+function openSeriesEditorModalAutoFiltered(){
+  openSeriesEditorModal();
+  const filt=dbFilterSummaryLabel();
+  const nameEl=document.getElementById('seriesEditName');
+  if(nameEl&&!nameEl.value.trim())nameEl.value=filt?`Series_${filt}`:`Series_${stamp()}`;
+  const folderEl=document.getElementById('seriesEditFolder');
+  if(folderEl&&!folderEl.value.trim()&&filt)folderEl.value=`Filtered/${filt}`;
+  toggleSeriesDraftAll(true);
 }
 function setActiveThermalSeriesId(v){
   activeThermalSeriesId=v&&thermalSeriesList.some(x=>x.id===v)?v:null;
@@ -5249,8 +5622,9 @@ function createOrUpdateSeriesFromEditor(){
 function openSeriesDbModal(){
   const ser=activeThermalSeriesId?thermalSeriesList.find(x=>x.id===activeThermalSeriesId):null;
   if(!ser||!ser.memberUids.length){toast('Select or create a series first');return;}
-  document.getElementById('seriesDbName').value=ser.name||`Series_${stamp()}`;
-  document.getElementById('seriesDbFolder').value=normalizeFolderPath(ser.folderPath);
+  const filt=dbFilterSummaryLabel();
+  document.getElementById('seriesDbName').value=ser.name||(filt?`Series_${filt}`:`Series_${stamp()}`);
+  document.getElementById('seriesDbFolder').value=normalizeFolderPath(ser.folderPath)||(filt?`Filtered/${filt}`:'');
   document.getElementById('seriesDbModal').classList.add('show');
 }
 function closeSeriesDbModal(){document.getElementById('seriesDbModal').classList.remove('show');}
@@ -5622,19 +5996,24 @@ async function exportChartImage(chart,base,format,opts={}){
   img.onerror=()=>toast('PDF export failed');
   img.src=url;
 }
+/** Feature 2: fold the current DB filter into an export filename, e.g. "xrd_pattern_C8TAG_T-51to-41_20260729_140500". */
+function withDbFilterTag(base){
+  const filt=dbFilterSummaryLabel();
+  return filt?`${base}_${filt}`:base;
+}
 async function exportXrdChart(format){
   if(!xrdChart){toast('XRD chart not ready');return;}
-  await exportChartImage(xrdChart,`xrd_pattern_${stamp()}`,format,{fallbackHeight:xrdChartHeight,emptyMsg:'Load samples with XRD data first'});
+  await exportChartImage(xrdChart,withDbFilterTag(`xrd_pattern_${stamp()}`),format,{fallbackHeight:xrdChartHeight,emptyMsg:'Load samples with XRD data first'});
 }
 async function exportThermalChart(format){
   if(!thermalChart){toast('Thermal chart not ready');return;}
-  await exportChartImage(thermalChart,`thermal_history_${stamp()}`,format,{fallbackHeight:300,emptyMsg:'Set thermal times/temperatures or select a series with data'});
+  await exportChartImage(thermalChart,withDbFilterTag(`thermal_history_${stamp()}`),format,{fallbackHeight:300,emptyMsg:'Set thermal times/temperatures or select a series with data'});
 }
 async function exportCombineChart(format){
   if(!outerChart){toast('Combine chart not ready');return;}
   const comb=getActiveCombine();
   const slug=comb?.name?comb.name.replace(/[^\w.-]+/g,'_').slice(0,40):'combine';
-  await exportChartImage(outerChart,`xrd_combine_${slug}_${stamp()}`,format,{fallbackHeight:outerChartHeight,emptyMsg:'Create a combine and select traces from the linked series'});
+  await exportChartImage(outerChart,withDbFilterTag(`xrd_combine_${slug}_${stamp()}`),format,{fallbackHeight:outerChartHeight,emptyMsg:'Create a combine and select traces from the linked series'});
 }
 function exportOuterChart(format){exportCombineChart(format);}
 
@@ -7264,7 +7643,8 @@ async function deleteDbProject(id){if(!confirm('Delete project?'))return;await a
 async function clearDbProjects(){if(!confirm('Clear all projects?'))return;await adapter.clearProjects();refreshDbPanels();}
 function openSaveModal(){
   document.getElementById('projectName').value=`Project_${stamp()}`;
-  document.getElementById('projectFolderInput').value='';
+  const filt=dbFilterSummaryLabel();
+  document.getElementById('projectFolderInput').value=filt?`Filtered/${filt}`:'';
   document.getElementById('projectTags').value='';
   document.getElementById('saveModal').classList.add('show');
 }
