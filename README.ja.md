@@ -5,7 +5,7 @@ HTML 1 ファイル完結（ビルド不要・インストール不要）。
 
 **English:** [README.md](README.md)
 
-**現行版:** [`xrd_analyzer_v19.html`](xrd_analyzer_v19.html)
+**現行版:** [`xrd_analyzer_v20.html`](xrd_analyzer_v20.html)
 旧版は [`old-version/`](old-version/)、設計メモは [`docs/`](docs/) にあります。
 
 ## 起動方法
@@ -19,7 +19,7 @@ HTML 1 ファイル完結（ビルド不要・インストール不要）。
 | Linux | `launchers/XRD-localhost.sh`（`bash launchers/XRD-localhost.sh`） |
 
 いずれも**リポジトリ直下**を `python3 -m http.server 8753` で配信し、
-`http://localhost:8753/xrd_analyzer_v19.html` を開きます。
+`http://localhost:8753/xrd_analyzer_v20.html` を開きます。
 
 **`file://` で開かないこと。** 読み込んだファイルとプロジェクトは IndexedDB に入りますが、
 `file://` のページはディスク逼迫時にブラウザからキャッシュごと破棄されることがあります
@@ -32,7 +32,7 @@ HTML 1 ファイル完結（ビルド不要・インストール不要）。
 python3 -m http.server 8753
 ```
 
-ブラウザで `http://localhost:8753/xrd_analyzer_v19.html` を開く。
+ブラウザで `http://localhost:8753/xrd_analyzer_v20.html` を開く。
 
 ### うまくいかないとき
 

@@ -1,6 +1,6 @@
 # XRD Analyzer — 開き方とデータ保全
 
-アクティブ版: **`xrd_analyzer_v19.html`**
+アクティブ版: **`xrd_analyzer_v20.html`**
 
 このアプリのDB（測定キャッシュ・プロジェクト・特徴量）は、開いているブラウザの
 **IndexedDB** に保存されます。**オリジン（file:// か http://localhost か）ごとに別のDB**
@@ -22,7 +22,7 @@ DBを自動退避（削除）することがあります。`http://localhost` �
 - **Windows**: `launchers/XRD-localhost.bat` をダブルクリック（要 Python3 / インストール時「Add to PATH」）
 - **Linux**: `bash launchers/XRD-localhost.sh`
 - 手動でも同じ: リポジトリ直下で `python3 -m http.server 8753` を実行 →
-  ブラウザで `http://localhost:8753/xrd_analyzer_v19.html`
+  ブラウザで `http://localhost:8753/xrd_analyzer_v20.html`
 
 > ⚠️ 一度 A を使い始めたら**常に A で開く**。間違えて file:// で開くと別オリジンの空DBに
 > 見えます（データは消えていない。localhost側に無いだけ）。
