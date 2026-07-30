@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="XRD">
 <meta name="theme-color" content="#ffffff">
-<title>XRD Analyzer v21</title>
+<title>XRD Analyzer v24</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
@@ -299,7 +299,7 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
   <div class="main">
     <div id="appNotice" class="app-notice" role="status" aria-live="polite"></div>
     <div class="topbar">
-      <span class="brand">XRD Analyzer v21</span>
+      <span class="brand">XRD Analyzer v24</span>
       <div class="sep"></div>
       <button class="btn" onclick="document.getElementById('fileIn').click()">Load Files</button>
       <button class="btn" onclick="openSaveModal()">Save Project</button>
@@ -575,9 +575,9 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             </div>
             <div class="basket-controls" title="Keep roughly evenly spaced traces out of the shown list (first and last always kept). Traces hidden by the search box are left untouched; add or remove individually afterwards.">
               <span style="font-size:10px;color:var(--text3)">show</span>
-              <select class="txt-sm" id="basketShowPreset" style="width:64px" onchange="setBasketShowPreset(this.value)" title="How many traces to show, spread evenly across the shown list. The first and last file are always kept. Choose manual to drive the slider yourself."><option value="auto">auto</option><option value="10">10</option><option value="30">30</option><option value="50">50</option><option value="100">100</option><option value="manual">manual</option></select>
-              <input type="range" id="basketThinRange" min="1" max="1" value="1" step="1" style="flex:1;min-width:70px" oninput="previewBasketThin(this.value)" onchange="applyBasketThin(this.value)">
-              <input type="number" class="num" id="basketThinCount" min="1" step="1" style="width:52px" onchange="applyBasketThin(this.value)">
+              <label style="font-size:10px;display:flex;align-items:center;gap:2px" title="First file of the range to plot (1 = the earliest in the shown list)">from<input type="number" class="num" id="basketShowFrom" min="1" step="1" style="width:48px" oninput="onBasketShowRangeInput()"></label><label style="font-size:10px;display:flex;align-items:center;gap:2px" title="Last file of the range to plot">to<input type="number" class="num" id="basketShowTo" min="1" step="1" style="width:48px" oninput="onBasketShowRangeInput()"></label><button type="button" class="btn" style="font-size:10px;padding:1px 5px" onclick="basketShowResetRange()" title="Reset the range to the whole shown list">all</button><select class="txt-sm" id="basketShowPreset" style="width:64px" onchange="setBasketShowPreset(this.value)" title="How many traces to plot inside the from–to range. Evenly spaced, and both ends of the range are always kept."><option value="auto">auto</option><option value="10">10</option><option value="30">30</option><option value="50">50</option><option value="100">100</option><option value="all">all</option><option value="manual">manual</option></select><label style="font-size:10px;display:flex;align-items:center;gap:2px" title="Keep every (skip+1)-th file inside the range before the count above is applied. 0 = consecutive.">skip<input type="number" class="num" id="basketShowSkip" min="0" step="1" value="0" style="width:42px" onchange="setBasketShowSkip(this.value)"></label>
+              <input type="range" id="basketThinRange" min="1" max="1" value="1" step="1" style="flex:1;min-width:70px" oninput="previewBasketThin(this.value)" onchange="applyBasketShow()">
+              <input type="number" class="num" id="basketThinCount" min="1" step="1" style="width:52px" onchange="applyBasketShow()">
               <span id="basketThinHint" style="font-size:10px;color:var(--text3);white-space:nowrap"></span>
               <span id="basketShowEnds" style="font-size:10px;color:var(--text3);white-space:nowrap"></span>
               <label style="font-size:10px;display:flex;align-items:center;gap:3px;white-space:nowrap" title="Refit both axes whenever traces are added to or thinned in the plot"><input type="checkbox" id="basketAutoFitChk" checked onchange="setBasketAutoFit(this.checked)">auto-fit</label>
@@ -629,6 +629,13 @@ details.seg-acc[open] summary{border-bottom:1px solid var(--border)}
             <div class="legend-format-row" id="legendFormatUi"></div>
             <div class="combine-canvas-wrap" id="combineCanvasWrap">
               <canvas id="outerCanvas"></canvas>
+            </div>
+            <div class="basket-controls" style="margin-top:4px">
+              <label style="font-size:10px;display:flex;align-items:center;gap:3px" title="Thermal history of the shown files. Coloured dots are the traces currently in the pattern chart above; the shaded band is the from-to range set in the show bar."><input type="checkbox" id="patThermalChk" checked onchange="setPatThermal(this.checked)">thermal history</label>
+              <span id="patThermalNote" style="font-size:10px;color:var(--text3)"></span>
+            </div>
+            <div id="patThermalWrap" style="height:130px;position:relative">
+              <canvas id="patThermalCanvas"></canvas>
             </div>
             <div class="chart-export-bar">
               <span style="font-size:10px;color:var(--text3);margin-right:auto">Export displayed chart</span>
@@ -5228,7 +5235,7 @@ function applyBasketThin(v){
   });
   dropped.forEach(u=>removeTraceFromDescendants(cmb.id,u));
   renderPatternTree();renderOuterSegmentList();renderCombineSamplePicker();redrawOuterChart();
-  basketAutoFitApply();syncBasketShowHint();
+  basketAutoFitApply();syncBasketShowHint();redrawPatternsThermal();
   toast(`Showing ${keep.size} of ${shown.length}`+((keep.size>1&&keep.size<shown.length)?' (first and last kept)':''));
 }
 /* ---- Paging: plot the shown files in batches (page size + skip + arrows) ------
@@ -5312,6 +5319,15 @@ function syncBasketThinUi(shownCount,selectedShown){
   if(sel)sel.value=basketShowPreset;
   const chk=document.getElementById('basketAutoFitChk');
   if(chk)chk.checked=basketAutoFit;
+  const pt=document.getElementById('patThermalChk');
+  if(pt)pt.checked=patThermalOn;
+  const pw=document.getElementById('patThermalWrap');
+  if(pw)pw.style.display=patThermalOn?'':'none';
+  const fa=document.getElementById('basketShowFrom'),fb=document.getElementById('basketShowTo');
+  if(fa){fa.max=n;fa.disabled=!shownCount;if(!fa.value||+fa.value>n)fa.value=shownCount?1:'';}
+  if(fb){fb.max=n;fb.disabled=!shownCount;if(!fb.value||+fb.value>n)fb.value=shownCount?n:'';}
+  const sk=document.getElementById('basketShowSkip');
+  if(sk)sk.disabled=!shownCount;
   const manual=basketShowPreset==='manual';
   if(r)r.style.opacity=manual?'1':'0.55';
   if(c)c.style.opacity=manual?'1':'0.55';
@@ -5516,6 +5532,8 @@ function redrawOuterChart(){
     return;
   }
   outerChart=new Chart(document.getElementById('outerCanvas'),{type:'line',data:{datasets},options:opts});
+
+  try{redrawPatternsThermal();}catch(e){}
 }
 /** Fit the Patterns chart Y axis to the currently plotted (non-hidden) data
  *  within the active X window, then redraw. Called on offset change and via
@@ -5627,10 +5645,7 @@ function setBasketShowPreset(v){
   const c=document.getElementById('basketThinCount');
   if(r)r.style.opacity=manual?'1':'0.55';
   if(c)c.style.opacity=manual?'1':'0.55';
-  if(manual){syncBasketShowHint();return;}
-  const shown=basketFilteredSamples().length;
-  const k=basketShowCountFor(preset,shown);
-  if(k){applyBasketThin(k);}
+  applyBasketShow();
   syncBasketShowHint();
 }
 (function restoreBasketShowPreset(){
@@ -5642,11 +5657,223 @@ function syncBasketShowHint(){
   const note=document.getElementById('basketShowEnds');
   if(note){
     const shown=basketFilteredSamples().length;
-    const c=parseInt(document.getElementById('basketThinCount')?.value,10);
-    note.textContent=(shown&&Number.isFinite(c)&&c>1&&c<shown)?'first+last kept':'';
+    if(!shown){note.textContent='';return;}
+    const cfg=basketShowReadInputs(shown);
+    const idx=basketShowIndices(shown,cfg.from,cfg.to,cfg.skip,basketShowPreset,cfg.manual);
+    note.textContent=idx.length
+      ?`→ ${idx.length} plotted (#${idx[0]+1}–#${idx[idx.length-1]+1}${cfg.skip?`, every ${cfg.skip+1}`:''}), ends kept`
+      :'→ nothing selected';
   }
 }
 /* =================== end v23 additions =================== */
+
+/* ===================== v24: show-bar range / count / skip ===================== */
+let basketShowFrom=null,basketShowTo=null,basketShowSkip=0;
+/**
+ * Pure selection: which indices of a shown list of length n end up plotted.
+ * Order of operations, as shown in the UI left to right:
+ *   1. from..to  clip to a sub-range (1-based, inclusive; nulls mean the ends)
+ *   2. skip      keep every (skip+1)-th file inside that sub-range
+ *   3. count     thin evenly to `count` files, always keeping both ends
+ * `preset` is 'auto' | 'all' | 'manual' | a number string.
+ */
+function basketShowIndices(n,from,to,skip,preset,manualCount){
+  n=Math.max(0,n|0);
+  if(!n)return[];
+  let a=Number.isFinite(from)&&from>=1?Math.min(from|0,n):1;
+  let b=Number.isFinite(to)&&to>=1?Math.min(to|0,n):n;
+  if(b<a){const t=a;a=b;b=t;}
+  const sub=[];
+  for(let i=a-1;i<=b-1;i++)sub.push(i);
+  const step=Math.max(0,skip|0)+1;
+  let cand=sub;
+  if(step>1){
+    cand=sub.filter((_,k)=>k%step===0);
+    const last=sub[sub.length-1];
+    if(cand.length&&cand[cand.length-1]!==last)cand.push(last);
+  }
+  if(!cand.length)return[];
+  let k;
+  if(preset==='all')k=cand.length;
+  else if(preset==='manual'){
+    k=Math.round(manualCount);
+    if(!Number.isFinite(k)||k<1)k=cand.length;
+  }else{
+    k=basketShowCountFor(preset,cand.length);
+    if(k==null)k=cand.length;
+  }
+  k=Math.max(1,Math.min(cand.length,k));
+  if(k>=cand.length)return cand;
+  return evenlySpacedIndices(cand.length,k).map(i=>cand[i]);
+}
+function basketShowReadInputs(n){
+  const gv=id=>{const v=parseInt(document.getElementById(id)?.value,10);return Number.isFinite(v)?v:null;};
+  const from=gv('basketShowFrom'),to=gv('basketShowTo');
+  const skip=Math.max(0,gv('basketShowSkip')||0);
+  const manual=gv('basketThinCount');
+  return{from:from,to:to,skip:skip,manual:manual};
+}
+/** Apply the show-bar selection to the active pattern. */
+function applyBasketShow(){
+  const cmb=getActiveCombine();
+  if(!cmb){toast('Select or create a pattern first');return;}
+  const shown=basketFilteredSamples();
+  if(!shown.length){toast('Nothing shown');return;}
+  const cfg=basketShowReadInputs(shown.length);
+  basketShowFrom=cfg.from;basketShowTo=cfg.to;basketShowSkip=cfg.skip;
+  const idx=basketShowIndices(shown.length,cfg.from,cfg.to,cfg.skip,basketShowPreset,cfg.manual);
+  if(!idx.length){toast('That range selects nothing');return;}
+  const keep=new Set(idx.map(i=>shown[i].sampleUid));
+  const shownUids=new Set(shown.map(s=>s.sampleUid));
+  if(!Array.isArray(cmb.traces))cmb.traces=[];
+  const dropped=cmb.traces.filter(t=>shownUids.has(t.sampleUid)&&!keep.has(t.sampleUid)).map(t=>t.sampleUid);
+  cmb.traces=cmb.traces.filter(t=>!shownUids.has(t.sampleUid)||keep.has(t.sampleUid));
+  const have=new Set(cmb.traces.map(t=>t.sampleUid));
+  shown.forEach(s=>{
+    if(!keep.has(s.sampleUid)||have.has(s.sampleUid))return;
+    cmb.traces.push({sampleUid:s.sampleUid,segType:'measurement',legendLabel:'',color:'',xOffset:0,yOffset:0,yGain:1,combineStackOffset:0});
+    have.add(s.sampleUid);
+  });
+  dropped.forEach(u=>removeTraceFromDescendants(cmb.id,u));
+  renderPatternTree();renderOuterSegmentList();renderCombineSamplePicker();redrawOuterChart();
+  basketAutoFitApply();syncBasketShowHint();
+  const first=idx[0]+1,last=idx[idx.length-1]+1;
+  toast(`Showing ${idx.length} file(s): #${first}–#${last} of ${shown.length}`
+    +(cfg.skip?` · every ${cfg.skip+1}${'th'}`:'')); 
+}
+function onBasketShowRangeInput(){applyBasketShow();}
+function setBasketShowSkip(v){
+  const n=Math.max(0,parseInt(v,10)||0);
+  const el=document.getElementById('basketShowSkip');
+  if(el)el.value=n;
+  applyBasketShow();
+}
+/** Reset from/to to the full extent of the currently shown list. */
+function basketShowResetRange(){
+  const n=basketFilteredSamples().length;
+  const a=document.getElementById('basketShowFrom'),b=document.getElementById('basketShowTo');
+  if(a){a.value=n?1:'';a.max=n||1;}
+  if(b){b.value=n||'';b.max=n||1;}
+  basketShowFrom=n?1:null;basketShowTo=n||null;
+  applyBasketShow();
+}
+/* =================== end v24 =================== */
+
+/* ============ v25: thermal-history strip inside the Patterns tab ============ */
+let patThermalChart=null,patThermalOn=true;
+try{if(localStorage.getItem('xrdPatThermal')==='0')patThermalOn=false;}catch(e){}
+/** uid → the colour that trace is drawn with in the pattern chart. */
+function plottedColorMap(){
+  const m=new Map();
+  const cmb=getActiveCombine();
+  if(!cmb||!Array.isArray(cmb.traces))return m;
+  cmb.traces.forEach(t=>{
+    const s=samples.find(x=>x.sampleUid===t.sampleUid);
+    if(s)m.set(t.sampleUid,segDisplayColor(t,s));
+  });
+  return m;
+}
+/**
+ * Pure: turn a shown list into thermal points, split into "in the pattern chart"
+ * and "not". x is seconds from `originMs`; callers convert to the display unit.
+ */
+function patternsThermalPoints(list,plottedUids,originMs){
+  const all=[],plotted=[];
+  (list||[]).forEach((s,i)=>{
+    const e=thermalPointOrWindow(s);
+    const T=featSampleTempC(s);
+    if(!e||!Number.isFinite(T))return;
+    const x=(e.t0.getTime()-originMs)/1000;
+    if(!Number.isFinite(x))return;
+    const pt={x,y:T,idx:i,uid:s.sampleUid};
+    all.push(pt);
+    if(plottedUids&&plottedUids.has(s.sampleUid))plotted.push(pt);
+  });
+  all.sort((a,b)=>a.x-b.x);
+  plotted.sort((a,b)=>a.x-b.x);
+  return{all,plotted};
+}
+/** x-extent (seconds) of the from–to window currently set in the show bar. */
+function patternsThermalBand(all,list,from,to){
+  if(!all.length||!list||!list.length)return null;
+  const n=list.length;
+  let a=Number.isFinite(from)&&from>=1?Math.min(from|0,n):1;
+  let b=Number.isFinite(to)&&to>=1?Math.min(to|0,n):n;
+  if(b<a){const t=a;a=b;b=t;}
+  if(a<=1&&b>=n)return null;                 // whole range → nothing to shade
+  const uidA=list[a-1]&&list[a-1].sampleUid,uidB=list[b-1]&&list[b-1].sampleUid;
+  const pa=all.find(p=>p.uid===uidA),pb=all.find(p=>p.uid===uidB);
+  if(!pa||!pb)return null;
+  return{x0:Math.min(pa.x,pb.x),x1:Math.max(pa.x,pb.x)};
+}
+function setPatThermal(on){
+  patThermalOn=!!on;
+  try{localStorage.setItem('xrdPatThermal',patThermalOn?'1':'0');}catch(e){}
+  const wrap=document.getElementById('patThermalWrap');
+  if(wrap)wrap.style.display=patThermalOn?'':'none';
+  redrawPatternsThermal();
+}
+function redrawPatternsThermal(){
+  const canvas=document.getElementById('patThermalCanvas');
+  if(!canvas)return;
+  if(patThermalChart){patThermalChart.destroy();patThermalChart=null;}
+  const note=document.getElementById('patThermalNote');
+  if(!patThermalOn){if(note)note.textContent='';return;}
+  const list=basketFilteredSamples();
+  const origin=thermalTimeOriginMs();
+  if(!list.length||origin==null){if(note)note.textContent='no thermal data for the shown files';return;}
+  const colors=plottedColorMap();
+  const {all,plotted}=patternsThermalPoints(list,new Set(colors.keys()),origin);
+  if(!all.length){if(note)note.textContent='no thermal data for the shown files';return;}
+  const cfg=basketShowReadInputs(list.length);
+  const band=patternsThermalBand(all,list,cfg.from,cfg.to);
+  const conv=p=>({x:toUnit(p.x),y:p.y,uid:p.uid});
+  const allPts=all.map(conv),plotPts=plotted.map(conv);
+  const bandU=band?{x0:toUnit(band.x0),x1:toUnit(band.x1)}:null;
+  const bandPlugin={
+    id:'patThermalBand',
+    beforeDatasetsDraw(c){
+      if(!bandU)return;
+      const{ctx,chartArea:a,scales:sc}=c;
+      const x0=sc.x.getPixelForValue(bandU.x0),x1=sc.x.getPixelForValue(bandU.x1);
+      ctx.save();
+      ctx.fillStyle='rgba(37,99,235,0.10)';
+      ctx.fillRect(Math.min(x0,x1),a.top,Math.abs(x1-x0),a.bottom-a.top);
+      ctx.strokeStyle='rgba(37,99,235,0.45)';ctx.setLineDash([4,3]);ctx.lineWidth=1;
+      [x0,x1].forEach(x=>{ctx.beginPath();ctx.moveTo(x,a.top);ctx.lineTo(x,a.bottom);ctx.stroke();});
+      ctx.restore();
+    }
+  };
+  patThermalChart=new Chart(canvas,{
+    type:'scatter',
+    data:{datasets:[
+      {label:'shown files',data:allPts,showLine:true,borderColor:'rgba(120,120,120,0.45)',
+       borderWidth:1,pointRadius:1.6,pointBackgroundColor:'rgba(120,120,120,0.5)',order:2},
+      {label:'in the pattern chart',data:plotPts,showLine:false,pointRadius:4,
+       pointBackgroundColor:plotPts.map(p=>colors.get(p.uid)||'#2563eb'),
+       pointBorderColor:'#fff',pointBorderWidth:1,order:1}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{
+        const s=samples.find(x=>x.sampleUid===c.raw.uid);
+        return (s?(s.rawName||s.name):'')+'  '+c.parsed.y.toFixed(1)+'°C  @ '+c.parsed.x.toFixed(1);
+      }}}},
+      scales:{
+        x:{type:'linear',title:{display:true,text:thermalXAxisTitle()},ticks:{font:{size:9}}},
+        y:{type:'linear',title:{display:true,text:'T (°C)'},ticks:{font:{size:9}}}
+      }},
+    plugins:[bandPlugin]
+  });
+  if(note){
+    note.textContent=plotPts.length
+      ? `${plotPts.length} of ${allPts.length} shown files are in the pattern chart`
+        +(bandU?` · range shaded`:'')
+      : `${allPts.length} shown files · none plotted yet`;
+  }
+}
+/* ============ end v25 ============ */
+
+
 
 function renderThermalSeriesSelect(){
   const sel=document.getElementById('thermalSeriesSelect');
@@ -8881,7 +9108,33 @@ function initFileDrop(){
    Feature DB (xrd_features) — Phase 1: peak extraction workbench
    pseudo-Voigt fit + 2-point baseline + Scherrer(optional instr. broadening)
    ===================================================================== */
-const FEAT_APP_VERSION='v23';
+const APP_VERSION='v25';
+const FEAT_APP_VERSION=APP_VERSION;
+
+/* ---------------------------------------------------------------------------
+   Version label. APP_VERSION is the source of truth for provenance (saved
+   features and CSV headers record it). The <title> and the top-bar brand are
+   set from it at load, so copying a build and bumping the constant can no
+   longer leave a stale "v21" in the tab. If the filename encodes a different
+   version the filename wins for display - the tab should always agree with the
+   URL - and the mismatch is logged.
+--------------------------------------------------------------------------- */
+function syncVersionLabels(){
+  try{
+    var shown=APP_VERSION;
+    var m=(location.pathname||'').match(/xrd_analyzer_(v[0-9]+)\.html$/);
+    if(m&&m[1]!==APP_VERSION){
+      console.warn('[xrd] build mismatch: file is '+m[1]+' but APP_VERSION is '+APP_VERSION+'; showing '+m[1]);
+      shown=m[1];
+    }
+    document.title='XRD Analyzer '+shown;
+    var b=document.querySelector('.brand');
+    if(b)b.textContent='XRD Analyzer '+shown;
+  }catch(e){}
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',syncVersionLabels);
+else syncVersionLabels();
+
 let featChart=null;
 let featSample=null;          // selected sample object
 let featFit=null;             // last fit result object
