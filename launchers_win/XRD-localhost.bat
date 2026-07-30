@@ -15,7 +15,7 @@ REM  Requires Python 3 (from python.org or the Microsoft Store).
 REM =====================================================================
 
 set "PORT=8753"
-set "FILE=xrd_analyzer_v22.html"
+set "FILE=xrd_analyzer_v23.html"
 
 REM Move to the repo root (one level up from this script's folder)
 cd /d "%~dp0.."
