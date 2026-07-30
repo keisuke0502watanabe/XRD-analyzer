@@ -15,10 +15,33 @@ REM  Requires Python 3 (from python.org or the Microsoft Store).
 REM =====================================================================
 
 set "PORT=8753"
-set "FILE=xrd_analyzer_v23.html"
+REM Leave FILE empty to auto-pick the newest xrd_analyzer_vNN.html in the repo
+REM root, so a version bump never means editing this launcher. Set it to a
+REM filename to pin an older build.
+set "FILE="
 
 REM Move to the repo root (one level up from this script's folder)
 cd /d "%~dp0.."
+
+REM ---- Resolve the newest build if FILE was left empty --------------
+if not defined FILE (
+    set "BEST=0"
+    for /f "tokens=1 delims=." %%a in ('dir /b xrd_analyzer_v*.html 2^>nul') do (
+        set "NAME=%%a"
+        set "NUM=!NAME:xrd_analyzer_v=!"
+        for /f "delims=0123456789" %%z in ("!NUM!") do set "NUM="
+        if defined NUM if !NUM! GEQ !BEST! (
+            set "BEST=!NUM!"
+            set "FILE=%%a.html"
+        )
+    )
+)
+if not defined FILE (
+    echo [ERROR] No xrd_analyzer_vNN.html found in "%CD%".
+    pause
+    exit /b 1
+)
+echo Using build: %FILE%
 
 if not exist "%FILE%" (
     echo [ERROR] Cannot find "%FILE%" in:

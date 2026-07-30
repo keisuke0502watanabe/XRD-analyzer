@@ -10,9 +10,19 @@
 #  lands on the repo root where the HTML lives.
 # =====================================================================
 PORT=8753
-FILE=xrd_analyzer_v23.html
+
+# Which build to open. Leave empty to auto-pick the highest xrd_analyzer_vNN.html
+# in the repo root, so bumping the version never means editing this launcher.
+# Set it to a filename (e.g. FILE=xrd_analyzer_v21.html) to pin an older build.
+FILE=""
 
 cd "$(dirname "$0")/.." || exit 1   # serve the repo root, not launchers_mac/
+
+if [ -z "$FILE" ]; then
+  FILE="$(ls -1 xrd_analyzer_v*.html 2>/dev/null \
+          | sed -n 's/^xrd_analyzer_v\([0-9][0-9]*\)\.html$/\1 &/p' \
+          | sort -rn | head -1 | cut -d' ' -f2)"
+fi
 
 die(){ echo ""; echo "[ERROR] $1"; echo ""; read -r -p "Press Return to close." _; exit 1; }
 
@@ -69,6 +79,7 @@ else
 fi
 
 echo "Opening $URL"
+echo "(build: $FILE)"
 open "$URL"
 
 echo ""

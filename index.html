@@ -11,7 +11,22 @@
 <!-- Always point the stable root URL at the current build. Bump this on each version. -->
 <meta http-equiv="refresh" content="0; url=./xrd_analyzer_v23.html">
 <link rel="canonical" href="./xrd_analyzer_v23.html">
-<script>location.replace('./xrd_analyzer_v23.html');</script>
+<script>
+// Redirect to the pinned build; if it 404s (e.g. this file was not bumped with
+// the app), fall back to the newest xrd_analyzer_vNN.html the server lists.
+(function(){
+  var pinned='./xrd_analyzer_v23.html';
+  fetch(pinned,{method:'HEAD'}).then(function(r){
+    if(r.ok){location.replace(pinned);return;}
+    return fetch('./').then(function(x){return x.text();}).then(function(t){
+      var m=t.match(/xrd_analyzer_v(\d+)\.html/g)||[];
+      var best=null,bn=-1;
+      m.forEach(function(f){var n=+f.replace(/\D+/g,'');if(n>bn){bn=n;best=f;}});
+      if(best){document.title='XRD Analyzer ('+best+')';location.replace('./'+best);}
+    });
+  }).catch(function(){location.replace(pinned);});
+})();
+</script>
 </head>
 <body>
 <p>Opening XRD Analyzer… If nothing happens, <a href="./xrd_analyzer_v23.html">tap here</a>.</p>
