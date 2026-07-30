@@ -10140,5 +10140,44 @@ document.getElementById('dbIn').addEventListener('change',e=>{const f=e.target.f
   try{renderAll();}catch(e){console.error(e);toast('UI: '+(e.message||e));}
 })();
 </script>
+<script>
+/* Stale-build notice: if a newer xrd_analyzer_vNN.html sits next to this file,
+   say so. Covers arriving here from a restored Chrome tab, a bookmark or a
+   home-screen shortcut, where the launcher never runs. Needs an http(s) origin
+   (a directory listing); over file:// it silently does nothing. */
+(function(){
+  try{
+    var m=location.pathname.match(/xrd_analyzer_v(\d+)\.html$/);
+    if(!m)return;
+    var mine=+m[1];
+    fetch('./',{cache:'no-store'}).then(function(r){return r.ok?r.text():null;}).then(function(t){
+      if(!t)return;
+      var best=mine,bestFile=null;
+      (t.match(/xrd_analyzer_v(\d+)\.html/g)||[]).forEach(function(f){
+        var n=+f.replace(/\D+/g,'');
+        if(n>best){best=n;bestFile=f;}
+      });
+      if(!bestFile)return;
+      var bar=document.createElement('div');
+      bar.setAttribute('data-stale-build-notice','1');
+      bar.style.cssText='position:fixed;left:0;right:0;top:0;z-index:2147483647;background:#b5502f;'+
+        'color:#fff;font:13px/1.5 -apple-system,system-ui,sans-serif;padding:7px 12px;'+
+        'display:flex;gap:12px;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.25)';
+      var msg=document.createElement('span');
+      msg.textContent='This is v'+mine+'. A newer build (v'+best+') is available in the same folder.';
+      var a=document.createElement('a');
+      a.href='./'+bestFile;a.textContent='Open v'+best;
+      a.style.cssText='color:#fff;font-weight:600;text-decoration:underline';
+      var b=document.createElement('button');
+      b.textContent='dismiss';
+      b.style.cssText='background:transparent;border:1px solid rgba(255,255,255,.6);color:#fff;'+
+        'border-radius:4px;cursor:pointer;padding:1px 9px;font:inherit';
+      b.onclick=function(){bar.parentNode&&bar.parentNode.removeChild(bar);};
+      bar.appendChild(msg);bar.appendChild(a);bar.appendChild(b);
+      (document.body||document.documentElement).appendChild(bar);
+    }).catch(function(){});
+  }catch(e){}
+})();
+</script>
 </body>
 </html>
