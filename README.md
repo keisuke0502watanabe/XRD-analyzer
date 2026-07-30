@@ -5,7 +5,7 @@ Single self-contained HTML file — no build step, no install.
 
 **日本語:** [README.ja.md](README.ja.md)
 
-**Current version:** [`xrd_analyzer_v25.html`](xrd_analyzer_v25.html)
+**Current version:** [`xrd_analyzer_v26.html`](xrd_analyzer_v26.html)
 Older builds are in [`old-version/`](old-version/); design notes are in [`docs/`](docs/).
 
 ## How to run
@@ -19,7 +19,7 @@ Older builds are in [`old-version/`](old-version/); design notes are in [`docs/`
 | Linux | `launchers/XRD-localhost.sh` (`bash launchers/XRD-localhost.sh`) |
 
 Each one serves the **repo root** with `python3 -m http.server 8753` and opens
-`http://localhost:8753/xrd_analyzer_v25.html`.
+`http://localhost:8753/xrd_analyzer_v26.html`.
 
 **Use this, not `file://`.** The app keeps your cached files and projects in IndexedDB; on a
 `file://` page the browser may evict that store under disk pressure, and `.hdf5` import needs a
@@ -32,7 +32,7 @@ data-safety checklist (auto-backup folder, JSON export).
 python3 -m http.server 8753
 ```
 
-Then open `http://localhost:8753/xrd_analyzer_v25.html`.
+Then open `http://localhost:8753/xrd_analyzer_v26.html`.
 
 ### If something goes wrong
 
