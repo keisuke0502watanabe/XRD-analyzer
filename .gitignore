@@ -12,3 +12,6 @@ _samples/
 
 # Local DB backups (large, not committed)
 db_backup/
+
+# Quarantine for files staged for manual deletion
+_to_delete/
