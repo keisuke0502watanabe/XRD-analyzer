@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+title: XRD-analyzer
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - family-names: Watanabe
+    given-names: Keisuke
+    orcid: "https://orcid.org/0000-0001-6374-3918"
+    affiliation: "Fukuoka University"
+  - family-names: Tanaka
+    given-names: Ryuki
+    alias: tanabooo
+repository-code: "https://github.com/keisuke0502watanabe/XRD-analyzer"
+license: MIT
+version: 1.0.0
+date-released: "2026-08-05"
+abstract: >-
+  A single-file, browser-based viewer and analyzer for X-ray diffraction
+  data that treats thermal history as first-class metadata. Reads HDF5
+  (NeXus / Anton Paar), Rigaku RAS, and pyFAI/ALBA formats, reconstructs
+  temperature-time series from instrument logs and filenames, and provides
+  pseudo-Voigt peak fitting with a persistent feature database.
+keywords:
+  - X-ray diffraction
+  - SAXS
+  - WAXS
+  - crystallization kinetics
+  - thermal history
+  - polymorphism
