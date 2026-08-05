@@ -114,4 +114,4 @@ instrumental FWHM correction). Saved rows are filterable and exportable as CSV.
 
 ## License
 
-Use and modify according to the repository owner's terms.
+MIT License — see [LICENSE](LICENSE).
