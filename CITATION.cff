@@ -1,4 +1,8 @@
 cff-version: 1.2.0
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.21812182
+    description: Concept DOI (always resolves to the latest version)
 title: XRD-analyzer
 message: "If you use this software, please cite it as below."
 type: software
