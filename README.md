@@ -118,3 +118,7 @@ instrumental FWHM correction). Saved rows are filterable and exportable as CSV.
 ## License
 
 MIT License — see [LICENSE](LICENSE).
+
+## Acknowledgements
+
+This work was supported by JSPS KAKENHI Grant Number 23K04683.
