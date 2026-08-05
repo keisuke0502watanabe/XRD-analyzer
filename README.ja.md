@@ -14,9 +14,9 @@ HTML 1 ファイル完結（ビルド不要・インストール不要）。
 
 | OS | ダブルクリックするファイル |
 |----|--------------------------|
-| macOS | `launchers/XRD-localhost.command` |
-| Windows | `launchers/XRD-localhost.bat` |
-| Linux | `launchers/XRD-localhost.sh`（`bash launchers/XRD-localhost.sh`） |
+| macOS | `launchers_mac/XRD-localhost.command` |
+| Windows | `launchers_win/XRD-localhost.bat` |
+| Linux | `launchers_mac/XRD-localhost.sh`（`bash launchers_mac/XRD-localhost.sh`） |
 
 いずれも**リポジトリ直下**を `python3 -m http.server 8753` で配信し、
 `http://localhost:8753/xrd_analyzer_v20.html` を開きます。
@@ -111,6 +111,6 @@ python3 -m http.server 8753
 - [`docs/DB_STRUCTURE.md`](docs/DB_STRUCTURE.md) — IndexedDB のストアとフィールド
 - [`docs/FEATURE_DB_DESIGN.md`](docs/FEATURE_DB_DESIGN.md) — 特徴量 DB の設計メモ
 
-## ライセンス・連絡
+## ライセンス
 
-リポジトリ内の利用・改変はプロジェクトオーナーに従ってください。
+MIT License — [LICENSE](LICENSE) を参照してください。
