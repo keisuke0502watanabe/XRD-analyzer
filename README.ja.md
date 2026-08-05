@@ -1,5 +1,8 @@
 # XRD-analyzer
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21812182.svg)](https://doi.org/10.5281/zenodo.21812182)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Anton Paar / Rigaku / ALBA などの XRD データと熱履歴をまとめて見るブラウザアプリです。
 HTML 1 ファイル完結（ビルド不要・インストール不要）。
 
