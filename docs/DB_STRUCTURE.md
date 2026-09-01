@@ -1,6 +1,6 @@
 # IndexedDB Structure (`xrd_analyzer_db_th`)
 
-Current app reference: `xrd_analyzer_v27.html` (v18 = last version before the dataset-name identity)  
+Current app reference: `xrd_analyzer_v28.html` (v18 = last version before the dataset-name identity)  
 Database name: `xrd_analyzer_db_th`  
 Version: `5`
 
