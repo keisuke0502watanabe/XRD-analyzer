@@ -1,5 +1,8 @@
 # XRD-analyzer
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21812182.svg)](https://doi.org/10.5281/zenodo.21812182)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Browser app for viewing XRD data and thermal history together (Anton Paar, Rigaku, ALBA, etc.).
 Single self-contained HTML file — no build step, no install.
 
@@ -14,9 +17,9 @@ Older builds are in [`old-version/`](old-version/); design notes are in [`docs/`
 
 | OS | File to double-click |
 |----|----------------------|
-| macOS | `launchers/XRD-localhost.command` |
-| Windows | `launchers/XRD-localhost.bat` |
-| Linux | `launchers/XRD-localhost.sh` (`bash launchers/XRD-localhost.sh`) |
+| macOS | `launchers_mac/XRD-localhost.command` |
+| Windows | `launchers_win/XRD-localhost.bat` |
+| Linux | `launchers_mac/XRD-localhost.sh` (`bash launchers_mac/XRD-localhost.sh`) |
 
 Each one serves the **repo root** with `python3 -m http.server 8753` and opens
 `http://localhost:8753/xrd_analyzer_v29.html`.
@@ -114,4 +117,8 @@ instrumental FWHM correction). Saved rows are filterable and exportable as CSV.
 
 ## License
 
-Use and modify according to the repository owner's terms.
+MIT License — see [LICENSE](LICENSE).
+
+## Acknowledgements
+
+This work was supported by JSPS KAKENHI Grant Number 23K04683.
