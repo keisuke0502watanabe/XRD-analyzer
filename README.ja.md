@@ -121,3 +121,6 @@ MIT License — [LICENSE](LICENSE) を参照してください。
 ## Acknowledgements
 
 This work was supported by JSPS KAKENHI Grant Number 23K04683.
+
+本リポジトリのコードは Claude (Anthropic) / Claude Code の支援を受けて開発しました。
+解析手法の設計、実測データによる検証、科学的な解釈は著者によるものです。
